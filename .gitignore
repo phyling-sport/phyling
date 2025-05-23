@@ -135,3 +135,4 @@ venv
 *.c
 
 test.json
+example_data.json

@@ -6,10 +6,11 @@ from typing import Union
 
 import ujson
 import urllib3
-from phylib.api import utils
-from phylib.api.record import Record
-from phylib.api.user import User
 from urllib3.filepost import encode_multipart_formdata
+
+from phyling.api import utils
+from phyling.api.record import Record
+from phyling.api.user import User
 
 
 class PhylingAPI:

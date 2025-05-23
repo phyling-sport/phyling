@@ -1,2 +1,2 @@
-from phylib.api.api import PhylingAPI  # noqa
-from phylib.api.record import Record  # noqa
+from phyling.api.api import PhylingAPI  # noqa
+from phyling.api.record import Record  # noqa

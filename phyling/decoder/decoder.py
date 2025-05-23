@@ -1,8 +1,9 @@
 import os
 
 import ujson
-from decoder.decoder_utils import *  # noqa
-from decoder.decoder_utils import decode
+
+from phyling.decoder.decoder_utils import *  # noqa
+from phyling.decoder.decoder_utils import decode
 
 
 def decodeSave(filename, verbose=True, overwrite=False):

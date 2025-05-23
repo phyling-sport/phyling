@@ -9,7 +9,7 @@ from packaging import version
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-import decoder.calibration_use as calib
+import phyling.decoder.calibration_use as calib
 
 TIME_MODULE_ID = 100
 TIME_MODULE_NAME = "__TIME_UPDATE__"
