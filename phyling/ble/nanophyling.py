@@ -234,13 +234,6 @@ class NanoPhyling:
         """
         return self.df
 
-    def get_dataframe(self) -> DataFrame:
-        """
-        Get the DataFrame containing the recorded data.
-        :return: DataFrame with recorded data
-        """
-        return self.get_df()
-
 
 if __name__ == "__main__":
     nano = NanoPhyling(name=sys.argv[1])
