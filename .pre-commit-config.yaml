@@ -1,0 +1,34 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-yaml
+      - id: debug-statements
+      - id: end-of-file-fixer
+        exclude: .txt
+      - id: trailing-whitespace
+        exclude: ^tests/ ^assets/ *.txt
+  - repo: https://github.com/PyCQA/flake8
+    rev: 7.1.1
+    hooks:
+      - id: flake8
+  - repo: https://github.com/ambv/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+        language_version: python3
+        exclude: ^assets/
+  - repo: https://github.com/asottile/reorder_python_imports
+    rev: v3.14.0
+    hooks:
+      - id: reorder-python-imports
+        args: [--py3-plus]
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest
+        entry: pytest tests
+        language: system
+        types: [python]
+        pass_filenames: false
+        always_run: true

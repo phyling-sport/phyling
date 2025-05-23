@@ -1,0 +1,7 @@
+# math / algo
+numpy==1.24.4
+
+# utils
+ujson==5.10.0
+Cython==3.0.11
+ipympl==0.9.4
