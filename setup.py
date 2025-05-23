@@ -3,13 +3,13 @@ from setuptools import find_packages
 from setuptools import setup
 
 ext_modules = [
-    Extension("phyling.decoder.decoder_utils", ["phyling/decoder/decoder_utils.c"]),
+    Extension("phyling.decoder.decoder_utils", ["phyling/decoder/decoder_utils.pyx"]),
 ]
 
 setup(
     name="phyling",
     version="6.6.6",
-    packages=find_packages(),  # ["phyling", "phyling.decoder", "phyling.api", "phyling.ble"],
+    packages=find_packages(),
     ext_modules=ext_modules,
     install_requires=["numpy", "pandas", "bleak"],
     description="Phyling public package",
