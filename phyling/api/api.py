@@ -547,7 +547,7 @@ class PhylingAPI:
             body=ujson.dumps(kwargs),
         )
         if not res:
-            return None
+            return False
         else:
             if file_type == "pdf" and res.status == 201:
                 task_id = ujson.loads(res.data.decode("utf-8"))["task_id"]
@@ -573,7 +573,7 @@ class PhylingAPI:
         name: str,
         wait_for_finish: bool = True,
         task_args: dict = {},
-        download_path: str = None,
+        download_path: Union[str, None] = None,
         overwrite: bool = False,
         timeout: int = 180,
         check_interval: int = 3,
@@ -613,7 +613,7 @@ class PhylingAPI:
             ),
         )
         if not res:
-            return None
+            return False
         if wait_for_finish:
             task_id = ujson.loads(res.data.decode("utf-8"))["task_id"]
             return self.wait_for_task(
@@ -669,7 +669,7 @@ class PhylingAPI:
             ),
         )
         if not res:
-            return None
+            return False
         if wait_for_finish:
             task_id = ujson.loads(res.data.decode("utf-8"))["task_id"]
             return self.wait_for_task(

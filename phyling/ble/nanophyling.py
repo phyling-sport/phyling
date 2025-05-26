@@ -3,7 +3,6 @@ import signal
 import sys
 import time
 from typing import Any
-from typing import Dict
 from typing import Union
 
 import ujson
@@ -69,9 +68,9 @@ class NanoPhyling:
 
     def __init__(
         self,
-        name: str = None,
-        address: str = None,
-        config: Dict[str, Any] = NANO_DEF_CONFIG,
+        name: Union[str, None] = None,
+        address: Union[str, None] = None,
+        config: dict[str, Any] = NANO_DEF_CONFIG,
     ):
         """
         Initialize the NanoPhyling class. You have to provide the name OR the address of the BLE device.
@@ -148,7 +147,7 @@ class NanoPhyling:
         print("Interruption detected. Stopping recording...")
         self.disconnect = True
 
-    async def _run_ble_client(self, duration: int):
+    async def _run_ble_client(self, duration: Union[int, None]):
         """
         Run the BLE client to connect to the device and start recording data.
         This function handles the connection, configuration, and data recording.
@@ -210,7 +209,7 @@ class NanoPhyling:
                 f"Number of recorded data: {self.nbDatas}, use NanoPhyling.get_df() to retrieve them"
             )
 
-    def run(self, duration: int = None) -> None:
+    def run(self, duration: Union[int, None] = None) -> None:
         """
         Run the BLE client to connect to the device and start recording data.
         This function handles the connection, configuration, and data recording.

@@ -7,7 +7,7 @@ class User:
     """
 
     api = None
-    desc = None
+    desc = {}
 
     def __init__(self, api, desc: dict):
         self.api = api
