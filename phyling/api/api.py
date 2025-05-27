@@ -209,7 +209,7 @@ class PhylingAPI:
                 if not (res.status >= 200 and res.status <= 299):
                     if res.status == 502:  # Bad gateway
                         logging.warning(msg + " (Bad gateway: Server is closed ?)")
-                    elif res.status == 401:
+                    elif res.status == 401 and auto_login:
                         logging.warning(msg + " (Invalid token, need to be refreshed)")
                     else:
                         msg += f" ({utils.get_error_message(res)})"
