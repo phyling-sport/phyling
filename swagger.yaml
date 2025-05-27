@@ -1,0 +1,3446 @@
+openapi: 3.1.1
+info:
+  title: Phyling API
+  description: API for Phyling application (can be used on app.phyling.fr or on a Maxi-Hub). phyling.fr
+  version: 6.5.5
+
+tags:
+  - name: Login
+    description: Login routes
+  - name: Users
+    description: Users routes
+  - name: Devices
+    description: Devices routes
+  - name: Mallettes
+    description: Mallettes routes
+  - name: Records
+    description: Records routes
+  - name: Selections
+    description: Selections routes
+  - name: Videos
+    description: Videos routes
+  - name: Sports
+    description: Sports routes
+  - name: Clients
+    description: Clients routes
+  - name: Groups
+    description: Groups routes
+  - name: Exercises
+    description: Exercises routes
+  - name: Configs
+    description: Configs routes
+  - name: Sensors
+    description: Sensors routes
+  - name: Scenarios
+    description: Scenarios routes
+  - name: Tasks
+    description: Tasks routes
+  - name: Utils
+    description: Utils routes
+  - name: MaxiPhyling
+    description: Maxi-Phyling routes
+
+servers:
+  - url: https://api.app.phyling.fr
+    description: Phyling cloud server
+  - url: http://192.168.1.42:5001
+    description: Maxi-Hub local server
+
+paths:
+  /backend_info:
+    get:
+      tags:
+        - Utils
+      summary: Get basic backend informations
+      responses:
+        "200":
+          description: Backend infos
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  back_type:
+                    type: string
+                    example: mallette-online
+  /health:
+    get:
+      tags:
+        - Utils
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+  /ping:
+    get:
+      tags:
+        - Utils
+      summary: Simply check if the API is available
+      responses:
+        "200":
+          description: API is running
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connected:
+                    type: boolean
+                    example: true
+                  type:
+                    type: string
+                    example: User
+                  login:
+                    type: string
+                    example: tim.nicolas@phyling.fr
+  
+  /login:
+    get:
+      tags:
+        - Login
+        - Users
+      summary: Get information about connected user
+      responses:
+        "200":
+          description: User data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        "401":
+          $ref: '#/components/responses/401'
+
+    post:
+      tags:
+        - Login
+        - Users
+      summary: Login to a user
+      description: ""
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mail:
+                  type: string
+                  example: tim.nicolas@phyling.fr
+                password:
+                  type: string
+                  example: admin
+      responses:
+        "200":
+          description: Connected
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                    example: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTY1NzIwNTQ4MSwianRpIjoiNmJkNGY2YzQtZDhjZi00OWE0LWE1MjEtODMwNGZlMzQxZjVkIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6InRpbS5uaWNvbGFzQHBoeWxpbmcuZnIiLCJuYmYiOjE2NTcyMDU0ODEsImV4cCI6MTY1NzIxNjI4MX0.Cttuq9TLQamtr4_Y_oZaaFKP3_Sm99ks8adY5suxx4g
+                  refresh_token:
+                    type: string
+                    example: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTY1NzIwNTQ4MSwianRpIjoiNmJkNGY2YzQtZDhjZi00OWE0LWE1MjEtODMwNGZlMzQxZjVkIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6InRpbS5uaWNvbGFzQHBoeWxpbmcuZnIiLCJuYmYiOjE2NTcyMDU0ODEsImV4cCI6MTY1NzIxNjI4MX0.Cttuq9TLQamtr4_Y_oZaaFKP3_Sm99ks8adY5suxx4g
+                  user:
+                    $ref: '#/components/schemas/User'
+        "401":
+          description: Bad mail or password
+        "403":
+          $ref: '#/components/responses/403'
+        "429":
+          $ref: '#/components/responses/429'
+
+  /refresh:
+    post:
+      tags:
+        - Login
+        - Users
+      summary: Refresh the access token
+      description: ""
+      responses:
+        "200":
+          description: New access token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                    example: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTY1NzIwNTQ4MSwianRpIjoiNmJkNGY2YzQtZDhjZi00OWE0LWE1MjEtODMwNGZlMzQxZjVkIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6InRpbS5uaWNvbGFzQHBoeWxpbmcuZnIiLCJuYmYiOjE2NTcyMDU0ODEsImV4cCI6MTY1NzIxNjI4MX0.Cttuq9TLQamtr4_Y_oZaaFKP3_Sm99ks8adY5suxx4g
+        "401":
+          $ref: '#/components/responses/401'
+
+  /users:
+    post:
+      tags:
+        - Users
+      summary: Create a new user
+      description: Available for admin or coach in the group (to create athlete only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mail:
+                  type: string
+                  example: test@phyling.fr
+                firstname:
+                  type: string
+                  example: Prenom
+                lastname:
+                  type: string
+                  example: Nom
+                password:
+                  type: string
+                  example: admin
+                groups:
+                  type: array
+                  example: [["boxe", "team1"], ["boxe", "team2"]]
+                roles:
+                  type: array
+                  example: ['Coach']
+                active:
+                  type: boolean
+                  example: true
+      responses:
+        "200":
+          description: User created
+        "500":
+          description: User already exists
+        "401":
+          description: Not authorized (need administrator)
+        "403":
+          $ref: '#/components/responses/403'
+
+  /users/all:
+    post:
+      tags:
+        - Users
+      summary: Get info about all users
+      description: Get info about all users in the scope
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                client_id:
+                  type: integer
+                  example: 1
+                  description: Select one client (only for admin)
+                group_ids:
+                  type: array
+                  example: []
+                role:
+                  type: string
+                  example: Athlete
+                  description: Should be `Admin`, `Manager`, `Coach` or `Athlete`
+                active:
+                  type: boolean
+                  example: true
+                  description: Select only active users
+                search:
+                  type: string
+                  example: ""
+                pageId:
+                  type: integer
+                  example: 1
+                pageSize:
+                  type: integer
+                  example: -1
+                soft:
+                  type: boolean
+                  example: true
+                  description: Returns only minimal information on users
+      responses:
+        "200":
+          description: The users list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                    example: 120
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+                    example: []
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+
+  /users/{user_id}:
+    get:
+      tags:
+        - Users
+      summary: Get a user
+      parameters:
+        - $ref: '#/components/parameters/user_id'
+
+      responses:
+        "200":
+          description: The user informations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+    put:
+      tags:
+        - Users
+      summary: Update a user
+      parameters:
+        - $ref: '#/components/parameters/user_id'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                firstname:
+                  type: string
+                  example: Prenom
+                lastname:
+                  type: string
+                  example: Nom
+      responses:
+        "200":
+          description: User updated
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+    delete:
+      tags:
+        - Users
+      summary: Delete a user
+      parameters:
+        - $ref: '#/components/parameters/user_id'
+      responses:
+        "200":
+          description: User deleted
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+
+  /users/{user_id}/groups:
+    get:
+      tags:
+        - Users
+      summary: Get a user groups
+      parameters:
+        - $ref: '#/components/parameters/user_id'
+      responses:
+        "200":
+          description: All user groups
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/Group'
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+
+
+  /devices/all:
+    post:
+      tags:
+        - Devices
+      summary: Get all devices
+      description: Available for admin only
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                search:
+                  type: string
+                  example: 200
+                  description: Search in device number, name or comment
+                clientId:
+                  type: integer
+                  example: 2
+                enabled:
+                  type: boolean
+                  example: true
+                type:
+                  type: array
+                  example: [10, 20]
+                pageId:
+                  type: integer
+                  example: 1
+                pageSize:
+                  type: integer
+                  example: 10
+      responses:
+        "200":
+          description: The devices list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Device'
+                    example: []
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+
+  /devices/all/soft:
+    get:
+      tags:
+        - Devices
+      summary: Get all devices in "soft" version (not all datas)
+      description: Available for all connected users
+      parameters:
+        - in: query
+          name: clientId
+          schema:
+            type: integer
+            example: 2
+          required: false
+          description: Select for one client (only for admin)
+        - in: query
+          name: type
+          schema:
+            type: integer
+            example: 10
+          required: false
+          description: The device type (for example 10 for Maxi-Phyling)
+      responses:
+        "200":
+          description: The devices list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Device'
+                    example: []
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+
+  /devices/{device_id}:
+    get:
+      tags:
+        - Devices
+      summary: Get a device
+      description: Available for admin or coach in the device
+      parameters:
+        - $ref: '#/components/parameters/device_id'
+      responses:
+        "200":
+          description: The device
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+
+  /devices/on_rec:
+    get:
+      tags:
+        - Devices
+        - Records
+      summary: Get all devices ids with devices that are in records list
+      responses:
+        "200":
+          description: The devices ids list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: integer
+                  example: 42
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+
+  /devices/next:
+    get:
+      tags:
+        - Devices
+      summary: Get next device number for given type & version
+      description: Available for admin only
+      parameters:
+        - in: query
+          name: type
+          schema:
+            type: integer
+            example: 10
+          required: false
+          description: Device type (ie 10 for Maxi-Phyling)
+        - in: query
+          name: version
+          schema:
+            type: integer
+            example: 20
+          required: false
+          description: Device version (ie 20 for v2.0)
+      responses:
+        "200":
+          description: The next device number
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+
+  /records:
+    post:
+      tags:
+        - Records
+      summary: Create a new Record
+      description: ""
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                data:
+                  type: object
+                  example: |
+                    {
+                      "timestamp": "1747127230.576",
+                      "scenario_id": -1,
+                      "group_id": 1,
+                      "upload_txt": false,
+                      "upload_pkl": false,
+                      "upload_csv": false,
+                      "user_ids": [
+                        1
+                      ],
+                      "device_id": 42,
+                      "exercise_name": "Exercise",
+                      "comment": "Commentaire par default",
+                      "basename": "Phyling_20220613_094800_2",
+                      "other_data": "{}"
+                    }
+                  properties:
+                    timestamp:
+                      type: number
+                      example: 1747127230.576
+                      description: Timestamp of the record in seconds
+                    scenario_id:
+                      type: integer
+                      example: -1
+                    client_id:
+                      type: integer
+                      example: 1
+                    group_id:
+                      type: integer
+                      example: 1
+                    upload_txt:
+                      type: boolean
+                      example: false
+                    upload_pkl:
+                      type: boolean
+                      example: false
+                    upload_csv:
+                      type: boolean
+                      example: false
+                    upload_video:
+                      type: boolean
+                      example: false
+                    favorite:
+                      type: boolean
+                      example: false
+                    user_ids:
+                      type: array
+                      example: [1]
+                    device_id:
+                      type: integer
+                      example: 42
+                    exercise_name:
+                      type: string
+                      example: Exercise
+                    comment:
+                      type: string
+                      example: Commentaire par default
+                    basename:
+                      type: string
+                      example: Phyling_20220613_094800_2
+                    other_data:
+                      type: object
+                      example: {}
+                    is_seance:
+                      type: boolean
+                      example: false
+                    seance_rec_ids:
+                      type: array
+                      example: []
+                    seance_id:
+                      type: integer
+                      example: -1
+                file:
+                  type: string
+                  format: base64
+            encoding:
+              file:
+                contentType: text/plain, text/csv, multipart/form-data
+      responses:
+        "200":
+          description: New record id
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rec_id:
+                    type: integer
+                    example: 1
+        "400":
+          description: Invalid file format
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+        "500":
+          $ref: '#/components/responses/500'
+    delete:
+      tags:
+        - Records
+      summary: Delete multiples records
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                record_ids:
+                  type: array
+                  example: [1, 2, 3]
+      responses:
+        "200":
+          description: Records deleted
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+  /records/all:
+    post:
+      tags:
+        - Records
+      summary: Get all record informations
+      description: Get rec in scope (sport for coach, all for admin, etc.)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                type:
+                  type: string
+                  example: new
+                pageSize:
+                  type: integer
+                  example: 10
+                pageId:
+                  type: integer
+                  example: 1
+                onlyFavorite:
+                  type: boolean
+                  example: false
+                userIds:
+                  type: array
+                  example: [1]
+                deviceIds:
+                  type: array
+                  example: [1]
+                clientIds:
+                  type: array
+                  example: [1]
+                groupIds:
+                  type: array
+                  example: [1]
+                exerciseIds:
+                  type: array
+                  example: [1]
+                sportIds:
+                  type: array
+                  example: [1]
+                record_type:
+                  type: string
+                  example: "scenario"
+                scenarioIds:
+                  type: array
+                  example: [1]
+                minDate:
+                  type: string
+                  example: "2023-11-20"
+                maxDate:
+                  type: string
+                  example: "2023-12-04"
+                include_seances_subrecords:
+                  type: boolean
+                  example: false
+      responses:
+        "200":
+          description: Record data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                    example: 120
+                  records:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Record'
+                    example: []
+        "401":
+          $ref: '#/components/responses/401'
+        "500":
+          $ref: '#/components/responses/500'
+
+  /records/{rec_id}:
+    get:
+      tags:
+        - Records
+      summary: Get record informations
+      description: ""
+      parameters:
+        - $ref: '#/components/parameters/rec_id'
+      responses:
+        "200":
+          description: Record data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Record'
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+
+    put:
+      tags:
+        - Records
+      summary: Edit record
+      parameters:
+        - $ref: '#/components/parameters/rec_id'
+      requestBody:
+        required: false
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                data:
+                  type: object
+                  example: |
+                    {
+                      "upload_txt": false,
+                      "upload_pkl": false,
+                      "upload_csv": false,
+                      "user_ids": [
+                        1
+                      ],
+                      "group_id": 1,
+                      "device_id": 42,
+                      "exercise_name": "Exercise",
+                      "comment": "Commentaire par default",
+                      "basename": "Phyling_20220613_094800_2",
+                      "other_data": "{}"
+                    }
+                  properties:
+                    timestamp:
+                      type: number
+                      example: 1747127230.576
+                      description: Timestamp of the record in seconds
+                    upload_txt:
+                      type: boolean
+                      example: false
+                    upload_pkl:
+                      type: boolean
+                      example: false
+                    upload_csv:
+                      type: boolean
+                      example: false
+                    decode_if_raw:
+                      type: boolean
+                      example: true
+                    user_ids:
+                      type: array
+                      example: [1]
+                    client_id:
+                      type: integer
+                      example: 1
+                    group_id:
+                      type: integer
+                      example: 1
+                    device_id:
+                      type: integer
+                      example: 42
+                    seance_id:
+                      type: integer
+                      example: -1
+                    exercise_name:
+                      type: string
+                      example: Exercise
+                    comment:
+                      type: string
+                      example: Commentaire par default
+                    basename:
+                      type: string
+                      example: Phyling_20220613_094800_2
+                    other_data:
+                      type: object
+                      example: {}
+                file:
+                  type: string
+                  format: base64
+            encoding:
+              file:
+                contentType: text/plain, text/csv
+      responses:
+        "200":
+          description: Record updated
+        "400":
+          description: Invalid file format
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+        "500":
+          $ref: '#/components/responses/500'
+
+    delete:
+      tags:
+        - Records
+      summary: Delete record
+      parameters:
+        - $ref: '#/components/parameters/rec_id'
+      responses:
+        "200":
+          description: Record deleted
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+
+  /records/{rec_id}/calibration:
+    get:
+      tags:
+        - Records
+      summary: Get the record calibration (Can be long, the file need to be read)
+      parameters:
+        - $ref: '#/components/parameters/rec_id'
+      responses:
+        "200":
+          description: The calibration file
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+
+  /records/{rec_id}/recalibrate:
+    post:
+      tags:
+        - Records
+      summary: Recalibrate the record
+      parameters:
+        - $ref: '#/components/parameters/rec_id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                method:
+                  type: string
+                  example: calib_acc_gyro
+                module:
+                  type: string
+                  example: imu
+                wanted_x:
+                  type: string
+                  example: T
+                range:
+                  type: array
+                  example: [2.3, 8.9]
+      responses:
+        "200":
+          description: Recalibrating record
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+
+  /records/{rec_id}/crop:
+    post:
+      tags:
+        - Records
+      summary: Crop the record
+      parameters:
+        - $ref: '#/components/parameters/rec_id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                wanted_x:
+                  type: string
+                  example: T
+                range:
+                  type: array
+                  example: [2.3, 8.9]
+      responses:
+        "200":
+          description: Record cropped successfully
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+
+  /records/{rec_id}/decode:
+    post:
+      tags:
+        - Records
+      summary: Decode the record
+      parameters:
+        - $ref: '#/components/parameters/rec_id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                record_type:
+                  type: string
+                  example: "record"
+                sport_id:
+                  type: integer
+                  example: 1
+                  description: To change the sport
+                scenario_id:
+                  type: integer
+                  example: -1
+                  description: To change the scenario
+                calibration:
+                  type: object
+                  example: {}
+                  description: To change the calibration
+                other_data:
+                  type: object
+                  example: {}
+                  description: To change the other data
+                reset_selections:
+                  type: boolean
+                  example: false
+                  description: To reset the selections
+      responses:
+        "200":
+          description: Record decoding
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+
+  /records/{rec_id}/errors:
+    get:
+      tags:
+        - Records
+      summary: Get the errors of the record
+      parameters:
+        - $ref: '#/components/parameters/rec_id'
+      description: ""
+      responses:
+        "200":
+          description: The error messages
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 1
+                  errors:
+                    type: array
+                    items:
+                      type: object
+                      example: { "type": "ERROR", "msg": "Error message", "date": "12/04/2023 13:42:28" }
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+    delete:
+      tags:
+        - Records
+      summary: Delete the errors of the record
+      parameters:
+        - $ref: '#/components/parameters/rec_id'
+      description: ""
+      responses:
+        "200":
+          description: The error messages
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 1
+                  errors:
+                    type: array
+                    items:
+                      type: object
+                      example: { "type": "ERROR", "msg": "Error message", "date": "12/04/2023 13:42:28" }
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+
+  /records/{rec_id}/stats:
+    get:
+      tags:
+        - Records
+      summary: Get record stats
+      description: Accessible on admin, coach on record group or athlete associate to record
+      parameters:
+        - $ref: '#/components/parameters/rec_id'
+      responses:
+        "200":
+          description: The stats
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+
+  /records/{rec_id}/file/{file_type}:
+    post:
+      tags:
+        - Records
+      summary: Download a record file (raw, csv, pdf, etc.)
+      description: Accessible on admin, coach on record group or athlete associate to record
+      parameters:
+        - $ref: '#/components/parameters/rec_id'
+        - in: path
+          name: file_type
+          schema:
+            type: string
+            example: decoded
+          required: true
+          description: One of raw, decoded, pdf, stats or specific_stats
+        - in: query
+          name: sel_id
+          schema:
+            type: integer
+          required: false
+          description: The selection id (for decoded and pdf download only)
+      responses:
+        "200":
+          description: File downloaded
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+        "500":
+          $ref: '#/components/responses/500'
+
+  /records/{rec_id}/selections:
+    get:
+      tags:
+        - Selections
+      summary: Get all selections
+      description: Accessible on admin, coach on record group or athlete associate to record
+      parameters:
+        - $ref: '#/components/parameters/rec_id'
+      responses:
+        "200":
+          description: The selections list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Selection'
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          description: Record not found
+
+    post:
+      tags:
+        - Selections
+      summary: Add a selection
+      description: Accessible on admin, coach on record group or athlete associate to record
+      parameters:
+        - $ref: '#/components/parameters/rec_id'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                wanted_x:
+                  type: string
+                  example: T
+                range:
+                  type: array
+                  example: [2.3, 8.9]
+                exercise_name:
+                  type: string
+                  example: exo
+                comment:
+                  type: string
+                  example: commentaire
+                distance:
+                  type: integer
+                  example: 0
+                chrono:
+                  type: string
+                  example: ""
+                toffset:
+                  type: integer
+                  example: 0
+                doffset:
+                  type: integer
+                  example: 0
+      responses:
+        "200":
+          description: selection created
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          description: Record not found
+        "500":
+          $ref: '#/components/responses/500'
+
+    delete:
+      tags:
+        - Selections
+      summary: Delete all selections for a Record
+      description: Accessible on admin, coach on record group or athlete associate to record
+      parameters:
+        - $ref: '#/components/parameters/rec_id'
+      responses:
+        "200":
+          description: Selections deleted
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+
+  /records/{rec_id}/selections/{sel_id}:
+    put:
+      tags:
+        - Selections
+      summary: Update a selection
+      description: Accessible on admin, coach on record group or athlete associate to record
+      parameters:
+        - $ref: '#/components/parameters/rec_id'
+        - in: path
+          name: sel_id
+          schema:
+            type: integer
+          required: true
+          description: Number of the selection in record
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                exercise_name:
+                  type: string
+                  example: exo
+                comment:
+                  type: string
+                  example: commentaire
+                distance:
+                  type: integer
+                  example: 0
+                chrono:
+                  type: string
+                  example: ""
+                toffset:
+                  type: integer
+                  example: 0
+                doffset:
+                  type: integer
+                  example: 0
+      responses:
+        "200":
+          description: Selection updated
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+        "500":
+          $ref: '#/components/responses/500'
+
+    delete:
+      tags:
+        - Selections
+      summary: Delete a selection
+      description: Accessible on admin, coach on record group or athlete associate to record
+      parameters:
+        - $ref: '#/components/parameters/rec_id'
+        - in: path
+          name: sel_id
+          schema:
+            type: integer
+          required: true
+          description: Number of the selection in record
+      responses:
+        "200":
+          description: Selection deleted
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+
+  /sports:
+    get:
+      tags:
+        - Sports
+      summary: Get all sports
+      description: Available for all connected users
+      responses:
+        "200":
+          description: The sports list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Sport'
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+
+  /videos:
+    get:
+      tags:
+        - Videos
+      summary: Get videos informations (quality list and extensions list)
+      description: Available for all connected users
+      responses:
+        "200":
+          description: The videos informations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  quality_list:
+                    type: array
+                    example: ["480p", "720p", "1080p", "1440p", "4K"]
+                  extensions:
+                    type: array
+                    example: ["mp4", "mov", "avi", "mkv"]
+                  fps_list:
+                    type: array
+                    example: [12, 24, 30, 60, 120]
+                  default_quality:
+                    type: string
+                    example: "720p"
+                  default_fps:
+                    type: integer
+                    example: 24
+        "401":
+          $ref: '#/components/responses/401'
+
+  /videos/{client_id}:
+    get:
+      tags:
+        - Videos
+      summary: Get videos informations (enabled, quality list and extensions list)
+      description: Available for all connected users
+      parameters:
+        - $ref: '#/components/parameters/client_id'
+      responses:
+        "200":
+          description: The videos informations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                    example: true
+                  quality_list:
+                    type: array
+                    example: ["480p", "720p", "1080p"]
+                  extensions:
+                    type: array
+                    example: ["mp4", "mov", "avi", "mkv"]
+                  fps_list:
+                    type: array
+                    example: [12, 24, 30, 60]
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+
+  /videos/record/{rec_id}:
+    get:
+      tags:
+        - Videos
+      summary: Stream a video from S3
+      description: |
+        Returns an MP4 video stream retrieved from an S3 bucket.
+        Supports `Range` requests to enable streaming playback.
+      parameters:
+        - name: Range
+          in: header
+          required: false
+          description: |
+            Allows retrieving a specific part of the video for streaming.
+            Example: `Range: bytes=0-102400`
+          schema:
+            type: string
+      responses:
+        "200":
+          description: "Full video returned (if no Range request is made)"
+          content:
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+        "206":
+          description: "Partial video returned (Range request)"
+          content:
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+          headers:
+            Content-Range:
+              description: "Indicates the byte range sent"
+              schema:
+                type: string
+            Accept-Ranges:
+              description: "Specifies that the resource supports Range requests"
+              schema:
+                type: string
+            Content-Length:
+              description: "Size of the data sent"
+              schema:
+                type: integer
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          description: "Video not found"
+        "500":
+          description: "Server error"
+
+  /clients/{client_id}:
+    get:
+      tags:
+        - Clients
+      summary: Get a client
+      description: Available for admin or coach in the client
+      parameters:
+        - $ref: '#/components/parameters/client_id'
+      responses:
+        "200":
+          description: The client
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+
+  /clients/{client_id}/users:
+    get:
+      tags:
+        - Clients
+        - Users
+      summary: Get all users in a client
+      description: Available for admin or coach in the client
+      parameters:
+        - $ref: '#/components/parameters/client_id'
+        - in: query
+          name: active
+          schema:
+            type: boolean
+            example: true
+          required: false
+          description: Select only active users
+      responses:
+        "200":
+          description: The user list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                    example: 120
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+                    example: []
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+
+  /clients/{client_id}/groups:
+    get:
+      tags:
+        - Clients
+        - Groups
+      summary: Get all groups in a client
+      description: Available for admin or coach in the client
+      parameters:
+        - $ref: '#/components/parameters/client_id'
+      responses:
+        "200":
+          description: The groups list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Group'
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+
+  /clients/{client_id}/sports:
+    get:
+      tags:
+        - Clients
+        - Sports
+      summary: Get all sports in a client
+      description: Available for all connected users
+      parameters:
+        - $ref: '#/components/parameters/client_id'
+      responses:
+        "200":
+          description: The sports list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Sport'
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+
+  /clients/{client_id}/records:
+    get:
+      tags:
+        - Clients
+        - Records
+      summary: Get all records in a client
+      description: Available for admin or coach in the client
+      parameters:
+        - $ref: '#/components/parameters/client_id'
+        - in: query
+          name: type
+          schema:
+            type: string
+            example: all
+          required: false
+          description: Should be `all`, `new` or `associated`
+      responses:
+        "200":
+          description: The records list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Record'
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+
+  /clients/{client_id}/exercises:
+    get:
+      tags:
+        - Clients
+        - Exercises
+      summary: Get all exercises in a client
+      description: Available for admin or coach in the client
+      parameters:
+        - $ref: '#/components/parameters/client_id'
+      responses:
+        "200":
+          description: The exercises list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Exercise'
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+
+  /clients/{client_id}/configs:
+    get:
+      tags:
+        - Clients
+        - Configs
+      summary: Get all configs in a client
+      description: Available for admin or coach in the client
+      parameters:
+        - $ref: '#/components/parameters/client_id'
+      responses:
+        "200":
+          description: The configs list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Config'
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+
+  /clients/{client_id}/sensors:
+    get:
+      tags:
+        - Clients
+        - Sensors
+      summary: Get all sensors in a client
+      description: Available for admin or coach in the client
+      parameters:
+        - $ref: '#/components/parameters/client_id'
+      responses:
+        "200":
+          description: The sensors list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Sensor'
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+
+  /clients/{client_id}/mallettes:
+    get:
+      tags:
+        - Clients
+        - Mallettes
+      summary: Get all mallettes in a client
+      description: Available for admin or coach in the client
+      parameters:
+        - $ref: '#/components/parameters/client_id'
+      responses:
+        "200":
+          description: The mallettes list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Mallette'
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+
+  /clients/{client_id}/scenarios:
+    get:
+      tags:
+        - Clients
+        - Scenarios
+      summary: Get all scenarios in a client
+      description: Available for admin or coach in the client
+      parameters:
+        - $ref: '#/components/parameters/client_id'
+        - in: query
+          name: is_calib
+          schema:
+            type: boolean
+            example: false
+          required: false
+      responses:
+        "200":
+          description: The scenarios list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Scenario'
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+  /tasks/infos:
+    get:
+      tags:
+        - Tasks
+      summary: Get generic tasks informations
+      responses:
+        "200":
+          description: List of task informations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tasks:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        default_args:
+                          type: object
+                  executing_str_table:
+                    type: object
+                    example: { "0": "Waiting", "1": "Ask running", "2": "Running", "3": "Done", "4": "Error", "5": "Archived" }
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+  /tasks/all:
+    post:
+      tags:
+        - Tasks
+      summary: Get all tasks
+      description: Retrieve all tasks with optional filters
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                names:
+                  type: array
+                  default: []
+                  description: List of task names
+                clientIds:
+                  type: array
+                  default: []
+                  description: List of client IDs
+                executingState:
+                  type: array
+                  default: []
+                  description: List of executing states
+                pageSize:
+                  type: integer
+                  example: -1
+                  description: Size of one page. Default -1 (all tasks)
+                pageId:
+                  type: integer
+                  example: 1
+                  description: Page ID. Default 1
+      responses:
+        "200":
+          description: List of tasks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Task'
+                  total:
+                    type: integer
+                    example: 120
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+  /tasks/with_file:
+    post:
+      tags:
+        - Tasks
+      summary: Add a task (with a file in the request)
+      description: Create a new task
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              properties:
+                data:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                      example: db_update
+                    args:
+                      type: object
+                      example: {}
+                file:
+                  type: string
+                  format: base64
+            encoding:
+              file:
+                contentType: text/plain, text/csv, multipart/form-data
+      responses:
+        "200":
+          description: Task created
+        "500":
+          description: Task creation failed
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+  /tasks:
+    post:
+      tags:
+        - Tasks
+      summary: Add a task
+      description: Create a new task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  example: db_update
+                args:
+                  type: object
+                  example: {}
+      responses:
+        "200":
+          description: Task created
+        "500":
+          description: Task creation failed
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+  /tasks/{task_id}/restart:
+    post:
+      tags:
+        - Tasks
+      summary: Restart a task
+      description: Restart a task by its ID
+      parameters:
+        - in: path
+          name: task_id
+          schema:
+            type: integer
+          required: true
+          description: ID of the task to restart
+      responses:
+        "200":
+          description: Task restarted
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          description: Task not found
+        "500":
+          description: Unable to restart task
+  /tasks/{task_id}/cancel:
+    post:
+      tags:
+        - Tasks
+      summary: Cancel a task
+      description: Cancel a task by its ID
+      parameters:
+        - in: path
+          name: task_id
+          schema:
+            type: integer
+          required: true
+          description: ID of the task to cancel
+        - in: query
+          name: force
+          schema:
+            type: boolean
+          required: false
+          description: Force cancel even if task is not cancelable
+      responses:
+        "200":
+          description: Task canceled
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          description: Task not found
+        "500":
+          description: Unable to cancel task
+  /tasks/{task_id}/archive:
+    post:
+      tags:
+        - Tasks
+      summary: Archive a task
+      description: Archive a task by its ID. Works only if task is finished
+      parameters:
+        - in: path
+          name: task_id
+          schema:
+            type: integer
+          required: true
+          description: ID of the task to cancel
+      responses:
+        "200":
+          description: Task archived
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          description: Task not found
+        "500":
+          description: Unable to archive task
+  /tasks/{task_id}:
+    get:
+      tags:
+      - Tasks
+      summary: Get a task
+      description: Retrieve a task by its ID
+      parameters:
+        - in: path
+          name: task_id
+          schema:
+            type: integer
+          required: true
+          description: ID of the task to restart
+      responses:
+        "200":
+          description: Task retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          description: Task not found
+    delete:
+      tags:
+        - Tasks
+      summary: Delete a task
+      description: Delete a task by its ID
+      parameters:
+        - in: path
+          name: task_id
+          schema:
+            type: integer
+          required: true
+          description: ID of the task to delete
+      responses:
+        "200":
+          description: Task deleted
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          description: Task not found
+        "500":
+          description: Unable to delete task (maybe task is running)
+  /tasks/manual_update:
+    post:
+      tags:
+        - Tasks
+      summary: Update tasks (process, etc.)
+      description: Manually update tasks
+      responses:
+        "200":
+          description: Task updated
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+  /tasks/status:
+    get:
+      tags:
+        - Tasks
+      summary: Get the status of a task type (can get multiple tasks)
+      description: Retrieve the status of a task by its name
+      parameters:
+        - in: query
+          name: id
+          schema:
+            type: integer
+          required: false
+          description: ID of the task to get
+        - in: query
+          name: name
+          schema:
+            type: string
+          required: false
+          description: Name of the task to get
+        - in: query
+          name: names
+          schema:
+            type: string
+          required: false
+          description: Name of the tasks to get if use multi tasks
+        - in: query
+          name: rec_id
+          schema:
+            type: integer
+          required: false
+          description: ID of the record (if filter by rec_id)
+        - in: query
+          name: use_uid_filter
+          schema:
+            type: boolean
+          required: false
+          description: Enable uid filter
+        - in: query
+          name: use_rec_id_filter
+          schema:
+            type: boolean
+          required: false
+          description: Enable rec_id filter
+        - in: query
+          name: force_rec_id_filter
+          schema:
+            type: boolean
+          required: false
+          description: Force rec_id filter to be used
+      responses:
+        "200":
+          description: Task status retrieved
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Task'
+        "204":
+          description: No task found
+        "400":
+          description: Invalid task name
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+  /tasks/{task_id}/download:
+    post:
+      tags:
+        - Tasks
+      summary: Download the result file of a task (for example pdf)
+      description: Works only if there is a 'download' section in result
+      parameters:
+        - in: path
+          name: task_id
+          schema:
+            type: integer
+          required: true
+          description: ID of the task
+      responses:
+        "200":
+          description: File downloaded
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "204":
+          description: The file has to be downloading from S3 with a link
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url:
+                    type: string
+                    example: https://s3.amazonaws.com/...
+                  dl_filename:
+                    type: string
+                    example: file.pdf
+        "404":
+          description: No file to download
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+
+  /groups/{group_id}:
+    get:
+      tags:
+        - Groups
+      summary: Get a group
+      description: Available for admin or coach in the group
+      parameters:
+        - $ref: '#/components/parameters/group_id'
+      responses:
+        "200":
+          description: The group
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Group'
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+
+    put:
+      tags:
+        - Groups
+      summary: Update a group
+      description: Available for admin and manager only
+      parameters:
+        - $ref: '#/components/parameters/group_id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                groupname:
+                  type: string
+                  example: Default
+                client_id:
+                  type: integer
+                  example: 1
+      responses:
+        "200":
+          description: The group
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Group'
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+
+    delete:
+      tags:
+        - Groups
+      summary: Delete a group
+      description: Available for admin and manager only
+      parameters:
+        - $ref: '#/components/parameters/group_id'
+      responses:
+        "200":
+          description: Group deleted
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+
+  /groups/{group_id}/users:
+    get:
+      tags:
+        - Groups
+        - Users
+      summary: Get all users in a group
+      description: Available for admin or coach in the group
+      parameters:
+        - $ref: '#/components/parameters/group_id'
+        - in: query
+          name: active
+          schema:
+            type: boolean
+            example: true
+          required: false
+          description: Select only active users
+      responses:
+        "200":
+          description: The users list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+
+  /groups/{group_id}/records:
+    get:
+      tags:
+        - Groups
+        - Records
+      summary: Get all records in a group
+      description: Available for admin or coach in the group
+      parameters:
+        - $ref: '#/components/parameters/group_id'
+        - in: query
+          name: type
+          schema:
+            type: string
+            example: all
+          required: false
+          description: Should be `all`, `new` or `associated`
+      responses:
+        "200":
+          description: The records list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Record'
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+
+  /exercises:
+    get:
+      tags:
+        - Exercises
+      summary: Get all exercises
+      description: Available for admin only
+      responses:
+        "200":
+          description: The exercises list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Exercise'
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+
+    post:
+      tags:
+        - Exercises
+      summary: Add an exercise
+      description: Available for admin only
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                exercise_name:
+                  type: string
+                  example: exercise
+                client_id:
+                  type: integer
+                  example: 1
+      responses:
+        "200":
+          description: Exercise created
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "500":
+          description: Exercise already exists
+
+  /exercises/{exercise_id}:
+    get:
+      tags:
+        - Exercises
+      summary: Get an exercise
+      description: Available for admin & coach in the exercise groups
+      parameters:
+        - $ref: '#/components/parameters/exercise_id'
+      responses:
+        "200":
+          description: The exercise
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Exercise'
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+
+    put:
+      tags:
+        - Exercises
+      summary: Update an exercise
+      description: Available for admin only
+      parameters:
+        - $ref: '#/components/parameters/exercise_id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                exercise_name:
+                  type: string
+                  example: new exercise name
+      responses:
+        "200":
+          description: The exercise
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Exercise'
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+
+    delete:
+      tags:
+        - Exercises
+      summary: Delete an exercise
+      description: Available for admin only
+      parameters:
+        - $ref: '#/components/parameters/exercise_id'
+      responses:
+        "200":
+          description: Exercise deleted
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+
+  /maxiphyling:
+    get:
+      tags:
+        - MaxiPhyling
+      summary: Get the devices on mallette
+      description: Available for every connected users
+      responses:
+        "200":
+          description: The devices list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  properties:
+                    number:
+                      type: integer
+                      example: 42
+                    connected:
+                      type: boolean
+                      example: true
+                    device:
+                      $ref: '#/components/schemas/Device'
+  /maxiphyling/{device_id}/records/start:
+    post:
+      tags:
+        - MaxiPhyling
+      summary: Start a record
+      description: Available for every connected user
+      parameters:
+        - $ref: '#/components/parameters/device_id'
+        - in: query
+          name: realtime
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: If true, start realtime on record starting
+      responses:
+        "200":
+          description: Record started
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+        "418":
+          $ref: '#/components/responses/418'
+        "500":
+          description: Device not connected or unreachable
+  /maxiphyling/{device_id}/records/stop:
+    post:
+      tags:
+        - MaxiPhyling
+      summary: Stop a record
+      description: Available for every connected user
+      parameters:
+        - $ref: '#/components/parameters/device_id'
+      responses:
+        "200":
+          description: Record stopped
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+        "418":
+          $ref: '#/components/responses/418'
+        "500":
+          description: Device not connected or unreachable
+  /maxiphyling/{device_id}/selection/start:
+    post:
+      tags:
+        - MaxiPhyling
+      summary: Start a selection in realtime
+      description: Available for every connected user
+      parameters:
+        - $ref: '#/components/parameters/device_id'
+      responses:
+        "200":
+          description: Selection started
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+        "418":
+          $ref: '#/components/responses/418'
+        "500":
+          description: Device not connected or unreachable
+  /maxiphyling/{device_id}/selection/stop:
+    post:
+      tags:
+        - MaxiPhyling
+      summary: Stop a selection in realtime
+      description: Available for every connected user
+      parameters:
+        - $ref: '#/components/parameters/device_id'
+      responses:
+        "200":
+          description: Selection stopped
+        "201":
+          description: No selection to stop
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+        "418":
+          $ref: '#/components/responses/418'
+        "500":
+          description: Device not connected or unreachable
+  /maxiphyling/{device_id}/calibration:
+    get:
+      tags:
+        - MaxiPhyling
+      summary: Get a device calibration
+      description: Available for every connected users
+      parameters:
+        - $ref: '#/components/parameters/device_id'
+      responses:
+        "200":
+          description: The device calibration
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+        "418":
+          $ref: '#/components/responses/418'
+        "500":
+          description: Device not connected or unreachable
+    post:
+      tags:
+        - MaxiPhyling
+      summary: Update a device calibration
+      description: Available for every connected users
+      parameters:
+        - $ref: '#/components/parameters/device_id'
+      requestBody:
+        description: Calibration as json
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Config updated
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+        "418":
+          $ref: '#/components/responses/418'
+        "500":
+          description: Device not connected, unreachable or invalid config
+  /maxiphyling/{device_id}/wifi:
+    get:
+      tags:
+        - MaxiPhyling
+      summary: Get a device wifi
+      description: Available for every connected users
+      parameters:
+        - $ref: '#/components/parameters/device_id'
+      responses:
+        "200":
+          description: The device wifi
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+        "418":
+          $ref: '#/components/responses/418'
+        "500":
+          description: Device not connected or unreachable
+    post:
+      tags:
+        - MaxiPhyling
+      summary: Update a device wifi
+      description: Available for every connected users
+      parameters:
+        - $ref: '#/components/parameters/device_id'
+      requestBody:
+        description: Wifi as json
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Config updated
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+        "418":
+          $ref: '#/components/responses/418'
+        "500":
+          description: Device not connected, unreachable or invalid wifi file
+  /maxiphyling/{device_id}/config:
+    get:
+      tags:
+        - MaxiPhyling
+      summary: Get a device config
+      description: Available for every connected users
+      parameters:
+        - $ref: '#/components/parameters/device_id'
+      responses:
+        "200":
+          description: The device config
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+        "418":
+          $ref: '#/components/responses/418'
+        "500":
+          description: Device not connected or unreachable
+    post:
+      tags:
+        - MaxiPhyling
+      summary: Update a device config from json
+      description: Available for every connected users
+      parameters:
+        - $ref: '#/components/parameters/device_id'
+      requestBody:
+        description: Config as json (don't need to send sport and group)
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                config:
+                  type: object
+                  example: {
+                    modules: {
+                        Phyling_00042: {
+                            calib_type: [ "acc_gyro", "gyro" ],
+                            bleName: "Phyling_00042",
+                            data: [
+                                { acc_x: "float32" },
+                                { acc_y: "float32" },
+                                { acc_z: "float32" },
+                                { gyro_x: "float32" },
+                                { gyro_y: "float32" },
+                                { gyro_z: "float32" }
+                            ],
+                            enabled: true,
+                            rate: 100,
+                            realtimeRate: 50,
+                            type: "ble"
+                        }
+                    },
+                  }
+      responses:
+        "200":
+          description: Config updated
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+        "418":
+          $ref: '#/components/responses/418'
+        "500":
+          description: Device not connected, unreachable or invalid config
+
+  /maxiphyling/{device_id}/restart:
+    post:
+      tags:
+        - MaxiPhyling
+      summary: Restart a device
+      parameters:
+        - $ref: '#/components/parameters/device_id'
+      responses:
+        "200":
+          description: Restarting
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "418":
+          $ref: '#/components/responses/418'
+        "503":
+          $ref: "#/components/responses/503"
+  /maxiphyling/{device_id}/shutdown:
+    post:
+      tags:
+        - MaxiPhyling
+      summary: Shutdown a device
+      parameters:
+        - $ref: '#/components/parameters/device_id'
+      responses:
+        "200":
+          description: Shutdown
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "418":
+          $ref: '#/components/responses/418'
+        "500":
+          description: Version is too old
+        "503":
+          $ref: "#/components/responses/503"
+
+components:
+  schemas:
+    Sport:
+      description: All informations about a sport
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: default
+        display_name:
+          type: string
+          example: {"fr": "Défaut", "en": "Default"}
+        text:
+          type: string
+          example: default
+        value:
+          type: integer
+          example: 1
+    Group:
+      description: All informations about a group
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: Default
+        client_id:
+          type: integer
+          example: 2
+    Exercise:
+      description: All informations about an exercise
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: Exercise
+        client_id:
+          type: integer
+          example: 2
+    User:
+      description: User object
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 10
+        active:
+          type: boolean
+          example: true
+        client_id:
+          type: integer
+          example: 2
+        created_date:
+          type: string
+          example: '0000-00-00'
+        externalAPI:
+          type: object
+          example: {}
+        firstname:
+          type: string
+          example: name
+        lastname:
+          type: string
+          example: lastname
+        mail:
+          type: string
+          example: example@phyling.fr
+        psqs_id:
+          type: string
+          example: ''
+        roles:
+          type: array
+          example: ['Manager', 'Athlete']
+        groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/Group'
+    Client:
+      description: All informations about a client
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: phyling
+        display_name:
+          type: string
+          example: phyling
+    ClientFull:
+      description: All informations about a client
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: phyling
+        display_name:
+          type: string
+          example: phyling
+        enabled:
+          type: boolean
+          example: true
+        cloud_enabled:
+          type: boolean
+          example: false
+        video_enabled:
+          type: boolean
+          example: false
+        video_quality:
+          type: string
+          example: 720p
+        external_ids:
+          type: array
+          example: []
+        external_names:
+          type: array
+          example: []
+        mallette_ids:
+          type: array
+          example: []
+        mallette_names:
+          type: array
+          example: []
+        sport_ids:
+          type: array
+          example: []
+        sport_names:
+          type: array
+          example: []
+        sensor_ids:
+          type: array
+          example: []
+        sensor_names:
+          type: array
+          example: []
+        scenarios:
+          type: array
+          items:
+            $ref: '#/components/schemas/Scenario'
+          example: []
+        compiled_scenarios:
+          type: array
+          example: []
+    Device:
+      description: All informations about a device
+      type: object
+      properties:
+        number:
+          type: integer
+          example: 10200042
+        name:
+          type: string
+          example: "Maxi 42"
+        enabled:
+          type: boolean
+          example: true
+        type:
+          type: string
+          example: "Maxi-Phyling"
+        created_date:
+          type: string
+          example: '0000-00-00'
+        client_id:
+          type: integer
+          example: 1
+        client_name:
+          type: string
+          example: "Client Name"
+        group_id:
+          type: integer
+          example: 1
+        group_name:
+          type: string
+          example: "Group Name"
+        manager_comment:
+          type: string
+          example: ""
+        comment:
+          type: string
+          example: ""
+        other_data:
+          type: object
+          example: {}
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+          example: []
+    Mallette:
+      description: All informations about a hub
+      type: object
+      properties:
+        number:
+          type: integer
+          example: 30100042
+        name:
+          type: string
+          example: "Hub 42"
+        allclients:
+          type: boolean
+          example: false
+    Record:
+      description: All informations about a record
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        client_id:
+          type: integer
+          example: 1
+        date:
+          type: string
+          example: "27/05/2025 10:44:57"
+        dt_created:
+          type: string
+          example: "2025-05-27T10:44:57.526"
+        timestamp:
+          type: integer
+          example: 1748335497526
+        timezone:
+          type: string
+          example: "Europe/Paris"
+        exercise_name:
+          type: string
+          example: ""
+        favorite:
+          type: boolean
+          example: false
+        group_id:
+          type: integer
+          example: 1
+        group_name:
+          type: string
+          example: "Default"
+        record_type:
+          type: string
+          example: "record"
+        record_type_name:
+          type: string
+          example: "Normal"
+        use_starting_time:
+          type: boolean
+          example: true
+        comment:
+          type: string
+          example: ""
+        cloud_state:
+          type: string
+          example: not_uploaded
+        size:
+          type: integer
+          example: 0
+        scenario_classname:
+          type: string
+          example: ""
+        scenario_id:
+          type: integer
+          example: 0
+        seance_id:
+          type: integer
+          example: 0
+        selections:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+                example: 1
+              num:
+                type: integer
+                example: 1
+        available_data:
+          type: object
+          example: {T: {description: 'Temps', 'unit': 's'}}
+        basename:
+          type: string
+          example: Phyling_20220613_094800_2
+        nb_errors:
+          type: integer
+          example: 0
+        external:
+          $ref: '#/components/schemas/External'
+        sport_id:
+          type: integer
+          example: 1
+        sport_name:
+          type: string
+          example: Default
+        sport_disp_name:
+          type: string
+          example: "Défaut"
+        other_data:
+          type: string
+          example: {}
+        user_ids:
+          type: array
+          items:
+            type: integer
+            example: 1
+        users:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+                example: 1
+              mail:
+                type: string
+                example: tim.nicolas@phyling.fr
+              firstname:
+                type: string
+                example: Tim
+              lastname:
+                type: string
+                example: Nicolas
+          example: []
+        visualisable:
+          type: boolean
+          example: true
+        wrong_time:
+          type: boolean
+          example: false
+    Selection:
+      description: All informations about a selection
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        record_id:
+          type: integer
+          example: 1
+        num:
+          type: integer
+          example: 1
+        t0:
+          type: number
+          example: 3.4
+        t1:
+          type: number
+          example: 10.1
+        toffset:
+          type: number
+          example: 0.0
+        d0:
+          type: number
+          example: 0.0
+        d1:
+          type: number
+          example: 0.0
+        doffset:
+          type: number
+          example: 0.0
+        exercise:
+          $ref: '#/components/schemas/Exercise'
+        comment:
+          type: string
+          example: commentaire
+        distance:
+          type: integer
+          example: 0
+        chrono:
+          type: string
+    Config:
+      description: All informations about a config
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: kayak
+          description: This is the name of a specific config in a client
+        client_id:
+          type: integer
+          example: 1
+        config:
+          type: string
+          description: A config.json file content
+          example: {}
+    Sensor:
+      description: All informations about a sensor
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: imu
+        type:
+          type: string
+          example: imu
+        advanced:
+          type: boolean
+          example: false
+        allclients:
+          type: boolean
+          example: false
+          description: if true, sensor is available for all clients
+        comment:
+          type: string
+          example: ""
+        parameters:
+          type: object
+          example: {
+            "rate": {
+              "type": "int",
+              "default": 100
+            }
+          }
+        config:
+          type: string
+          example: |
+            {
+              "enabled": true,
+              "rate": {rate},
+              "realtimeRate": 50,
+              "type": "imu",
+              "important": true
+            }
+    Scenario:
+      description: All informations about a scenario
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: CMJ avec entraineur
+        display_name:
+          type: string
+          example: "{\"fr\": \"CMJ\", \"en\": \"CMJ\"}"
+        text:
+          type: string
+          example: CMJ
+        is_calib:
+          type: boolean
+          example: false
+        is_compiled:
+          type: boolean
+          example: false
+        client_id:
+          type: integer
+          example: 1
+        classname:
+          type: string
+          example: CMJEntraineurScenario
+        missing_class:
+          type: boolean
+          example: false
+        comment:
+          type: string
+          example: ""
+        config:
+          type: object
+          example: {"id": 1, "name": "CMJScenario"}
+        params:
+          type: object
+          example: |
+            [
+              {
+                "default": 3,
+                "description": {
+                  "en": "Number of jumps",
+                  "fr": "Nombre de sauts"
+                },
+                "name": "nb_rep",
+                "optional": false,
+                "type": "int",
+                "unit": ""
+              }
+            ]
+    External:
+      description: All informations about an external API
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: nolio
+    Task:
+      description: All informations about a task
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: db_update
+        executing:
+          type: integer
+          example: 0
+        executing_str:
+          type: string
+          example: waiting
+        executing_time:
+          type: string
+          example: "2025-05-27 11:19:08"
+        status:
+          type: object
+          example: |
+            {
+              "en": "Decoded",
+              "fr": "D\u00e9cod\u00e9"
+            }
+        rec_ids:
+          type: array
+          items:
+            type: integer
+            example: 1
+        caller_front_uid:
+          type: string
+          example: ""
+        client_id:
+          type: integer
+          example: 1
+        client_name:
+          type: string
+          example: phyling
+        result:
+          type: object
+          example: {}
+        loading:
+          type: boolean
+          example: false
+        error:
+          type: boolean
+          example: false
+        success:
+          type: boolean
+          example: true
+        ask_cancel:
+          type: boolean
+          example: false
+        can_download:
+          type: boolean
+          example: false
+        is_cancelable:
+          type: boolean
+          example: false
+        args:
+          type: object
+          example: {}
+        messages_history:
+          type: array
+          items:
+            type: object
+            example: |
+              [
+                {
+                  "date": "27/05/2025 11:13:44",
+                  "msg": {
+                    "en": "Waiting for decoding...",
+                    "fr": "En attente de décodage..."
+                  },
+                  "type": "INFO"
+                }
+              ]
+    BasicsConfig:
+      type: object
+      properties:
+        config:
+          type: array
+          items:
+            properties:
+              name:
+                type: string
+                example: imu
+              enabled:
+                type: boolean
+                example: true
+              important:
+                type: boolean
+                example: true
+              rate:
+                type: integer
+                example: 100
+    RunningScenario:
+      description: All informations about a scenario
+      type: object
+      properties:
+        run_id:
+          type: integer
+          example: 1
+          description: This is the running id of the scenario
+        scenario:
+          $ref: '#/components/schemas/Scenario'
+        devices:
+          type: array
+          items:
+            $ref: '#/components/schemas/Device'
+          example: []
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    user_id:
+      in: path
+      name: user_id
+      schema:
+        type: integer
+      required: true
+      description: Numeric ID of the user
+    device_id:
+      in: path
+      name: device_id
+      schema:
+        type: integer
+      required: true
+      description: Numeric ID of the device
+    mallette_id:
+      in: path
+      name: mallette_id
+      schema:
+        type: integer
+      required: true
+      description: Numeric ID of the mallette
+    client_id:
+      in: path
+      name: client_id
+      schema:
+        type: integer
+      required: true
+      description: Numeric ID of the client
+    group_id:
+      in: path
+      name: group_id
+      schema:
+        type: integer
+      required: true
+      description: Numeric ID of the group
+    rec_id:
+      in: path
+      name: rec_id
+      schema:
+        type: integer
+      required: true
+      description: Numeric ID of the record
+    sport_id:
+      in: path
+      name: sport_id
+      schema:
+        type: integer
+      required: true
+      description: Numeric ID of the device
+    scenario_id:
+      in: path
+      name: scenario_id
+      schema:
+        type: integer
+      required: true
+      description: Numeric ID of the scenario
+    exercise_id:
+      in: path
+      name: exercise_id
+      schema:
+        type: integer
+      required: true
+      description: Numeric ID of the device
+    config_id:
+      in: path
+      name: config_id
+      schema:
+        type: integer
+      required: true
+      description: Numeric ID of the config
+    run_id:
+      in: path
+      name: run_id
+      schema:
+        type: integer
+      required: true
+      description: The current running id for a scenario
+    id:
+      in: path
+      name: id
+      schema:
+        type: integer
+      required: true
+      description: The id of an element
+    table_name:
+      in: path
+      name: table_name
+      schema:
+        type: string
+      required: true
+      description: A table name (User, Client, etc.)
+    cookie_name:
+      in: query
+      name: cookie_name
+      schema:
+        type: string
+      required: true
+      description: The name of a cookie
+    module_name:
+      in: path
+      name: module_name
+      schema:
+        type: string
+      required: true
+      description: Name of the module
+    X-Device-Id:
+      in: header
+      name: X-Device-Id
+      schema:
+        type: string
+      required: true
+    X-Device-Password:
+      in: header
+      name: X-Device-Password
+      schema:
+        type: string
+      required: true
+    X-Mallette-Id:
+      in: header
+      name: X-Mallette-Id
+      schema:
+        type: string
+      required: true
+    X-Mallette-Password:
+      in: header
+      name: X-Mallette-Password
+      schema:
+        type: string
+      required: true
+    X-Record-Id:
+      in: header
+      name: X-Record-Id
+      schema:
+        type: string
+      required: true
+  responses:
+    400:  # $ref: '#/components/responses/400'
+      description: Bad request
+    401:  # $ref: '#/components/responses/401'
+      description: Unauthorized
+    403:  # $ref: '#/components/responses/403'
+      description: Forbidden
+    404:  # $ref: '#/components/responses/404'
+      description: Not Found
+    406:  # $ref: '#/components/responses/406'
+      description: Not Acceptable. Disable for your back type
+    409:  # $ref: '#/components/responses/409'
+      description: Conflict
+    418:  # $ref: '#/components/responses/418'
+      description: Device is not connected
+    429:  # $ref: '#/components/responses/429'
+      description: Too many requests
+    500:  # $ref: '#/components/responses/500'
+      description: Unexpected error
+    503:  # $ref: '#/components/responses/503'
+      description: Service Unavailable. Turning off
+
+security:
+  - bearerAuth: []
+
+
