@@ -157,6 +157,7 @@ class NanoPhyling:
         self.df = DataFrame(columns=["T"] + self.config["data"])
         self.nbDatas = 0
         self.startRecordTime = 0
+        self.startBLETime = 0
         async with BleakClient(self.address) as client:
             print("Connected to BLE sensor")
 
