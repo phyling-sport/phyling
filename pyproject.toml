@@ -6,10 +6,3 @@ requires = [
     "numpy"
 ]
 build-backend = "setuptools.build_meta"
-
-[project]
-name = "phyling"
-version = "6.6.6"
-description = "Phyling public package"
-dependencies = ["numpy", "pandas", "bleak"]
-urls = { "Homepage" = "https://github.com/phyling-sport/phyling" }
