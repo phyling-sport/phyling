@@ -36,7 +36,6 @@ class PhylingAPI:
         :param password: The password of the user.
         :param baseurl: The URL of the Phyling API. Default is "app.phyling.fr".
         """
-        utils.setup_logging()
         self.mail = mail
         self.password = password
         self.baseurl = url
