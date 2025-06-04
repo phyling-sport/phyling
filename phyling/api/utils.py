@@ -1,45 +1,12 @@
 import logging
 import os
 import platform
-import sys
 import time
 
 import urllib3
 
 
-logging_setup = False
 http = urllib3.PoolManager()
-
-
-def setup_logging():
-    """
-    Defines the logging configuration and prints a logging start message.
-    """
-    global logging_setup
-    if logging_setup:
-        return
-    logging_setup = True
-
-    fmt = "[%(asctime)s][%(levelname)s]: %(message)s"
-    datefmt = "%d/%m/%Y %H:%M:%S"
-    rootLogger = logging.getLogger()
-
-    try:
-        import coloredlogs
-
-        logFormatter = coloredlogs.ColoredFormatter(
-            fmt=fmt,
-            datefmt=datefmt,
-        )
-    except ImportError:
-        logFormatter = logging.Formatter(
-            fmt=fmt,
-            datefmt=datefmt,
-        )
-    consoleHandler = logging.StreamHandler(stream=sys.stdout)
-    consoleHandler.setFormatter(logFormatter)
-    rootLogger.setLevel(logging.INFO)
-    rootLogger.addHandler(consoleHandler)
 
 
 def get_error_message(res):

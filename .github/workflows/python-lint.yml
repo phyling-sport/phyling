@@ -33,3 +33,6 @@ jobs:
             - name: Test with pytest
               run: |
                 pytest tests
+
+            - name: Try to install the local package
+              run: pip install -e .

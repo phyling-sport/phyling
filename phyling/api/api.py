@@ -36,7 +36,6 @@ class PhylingAPI:
         :param password: The password of the user.
         :param baseurl: The URL of the Phyling API. Default is "app.phyling.fr".
         """
-        utils.setup_logging()
         self.mail = mail
         self.password = password
         self.baseurl = url
@@ -209,7 +208,7 @@ class PhylingAPI:
                 if not (res.status >= 200 and res.status <= 299):
                     if res.status == 502:  # Bad gateway
                         logging.warning(msg + " (Bad gateway: Server is closed ?)")
-                    elif res.status == 401:
+                    elif res.status == 401 and auto_login:
                         logging.warning(msg + " (Invalid token, need to be refreshed)")
                     else:
                         msg += f" ({utils.get_error_message(res)})"
@@ -547,7 +546,7 @@ class PhylingAPI:
             body=ujson.dumps(kwargs),
         )
         if not res:
-            return None
+            return False
         else:
             if file_type == "pdf" and res.status == 201:
                 task_id = ujson.loads(res.data.decode("utf-8"))["task_id"]
@@ -573,7 +572,7 @@ class PhylingAPI:
         name: str,
         wait_for_finish: bool = True,
         task_args: dict = {},
-        download_path: str = None,
+        download_path: Union[str, None] = None,
         overwrite: bool = False,
         timeout: int = 180,
         check_interval: int = 3,
@@ -613,7 +612,7 @@ class PhylingAPI:
             ),
         )
         if not res:
-            return None
+            return False
         if wait_for_finish:
             task_id = ujson.loads(res.data.decode("utf-8"))["task_id"]
             return self.wait_for_task(
@@ -669,7 +668,7 @@ class PhylingAPI:
             ),
         )
         if not res:
-            return None
+            return False
         if wait_for_finish:
             task_id = ujson.loads(res.data.decode("utf-8"))["task_id"]
             return self.wait_for_task(
