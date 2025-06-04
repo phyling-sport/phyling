@@ -1,6 +1,8 @@
-from setuptools import setup, Extension, find_packages
-from Cython.Build import cythonize
 import numpy
+from Cython.Build import cythonize
+from setuptools import Extension
+from setuptools import find_packages
+from setuptools import setup
 
 
 def load_requirements(path):
@@ -14,12 +16,14 @@ setup(
     description="Phyling public package",
     packages=find_packages(),
     install_requires=load_requirements("requirements.txt"),
-    ext_modules=cythonize([
-        Extension(
-            "phyling.decoder.decoder_utils",
-            ["phyling/decoder/decoder_utils.pyx"],
-            include_dirs=[numpy.get_include()],
-        )
-    ]),
+    ext_modules=cythonize(
+        [
+            Extension(
+                "phyling.decoder.decoder_utils",
+                ["phyling/decoder/decoder_utils.pyx"],
+                include_dirs=[numpy.get_include()],
+            )
+        ]
+    ),
     url="https://github.com/phyling-sport/phyling",
 )
