@@ -271,11 +271,11 @@ cpdef object loadOne(dict header, char * content, int curPos, dict calib_dict=No
         if curModName == TIME_MODULE_NAME:
             precisionUs = getElem(content, tmpCurPos + 1, "uint32", content_size=content_size)
             epochUs = getElem(content, tmpCurPos + 5, "uint64", content_size=content_size)
-            if epochUs / 1e6 < 946684800 or epochUs / 1e6 > 2524608000:  # if epoch is before 2000 or after 2050
+            if epochUs / 1e6 < 1420070400 or epochUs / 1e6 > 2524608000:  # if epoch is before 2015 or after 2050
                 logSpam.warning(f"[Time recalibration] Epoch is not valid ({epochUs / 1e6}s)")
                 missingByteSize += 1
                 continue
-            if header["description"]["epoch"] > 946684800:
+            if header["description"]["epoch"] > 1420070400:
                 # if recalibration is for more than 7 days, cancel it
                 if epochUs / 1e6 < header["description"]["epoch"] - 604800 or epochUs / 1e6 > header["description"]["epoch"] + 604800:
                     logSpam.warning(f"[Time recalibration] Epoch is not valid ({epochUs / 1e6}s), cannot recalibrate more than 7 days")
