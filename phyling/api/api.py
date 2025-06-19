@@ -526,7 +526,6 @@ class PhylingAPI:
                 - "pdf": pdf report (.pdf)
                 - "stats": stats report (.csv)
                 - "specific_stats": specific stats report (.csv)
-                - "compressed": compressed data (.csv)
                 - "video": video file (.mp4) -> only for video records
                 - "zip": zip file (.zip)
             download_path (str): The path to save the downloaded file.
