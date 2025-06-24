@@ -12,7 +12,7 @@ def load_requirements(path):
 
 setup(
     name="phyling",
-    version="6.6.6",
+    version="7.0.0",
     description="Phyling public package",
     packages=find_packages(),
     install_requires=load_requirements("requirements.txt"),
