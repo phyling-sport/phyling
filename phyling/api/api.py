@@ -104,7 +104,7 @@ class PhylingAPI:
         res = self.request(
             auto_login=False,
             method="POST",
-            url="/refresh/mallette",
+            url="/refresh",
             headers={
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {self._refresh_token}",
