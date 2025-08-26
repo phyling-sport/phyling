@@ -44,7 +44,7 @@ def decodeSaveFolder(path, verbose=True, overwrite=False):
         verbose (bool): if True, print status infos during decoding.
         overwrite (bool): if False, an already decoded file will not be decoded again.
     """
-    filenames = [file for file in os.listdir(path) if (file[-4:] == ".txt")]
+    filenames = [file for file in os.listdir(path) if (file[-4:].lower() == ".txt")]
     for file in filenames:
         res = decodeSave(path + file, verbose, overwrite)
         if not res:
