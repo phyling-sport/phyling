@@ -14,8 +14,8 @@ sio_callbacks = {}  # {"event": callback, ...}
 sio_callbacks = {
     "connect": on_connect,
     "disconnect": on_disconnect,
-    "client/device/all": on_client_device_all,
-    "device/data/realtime": on_device_data_realtime,
+    "app/client/device/connected_list": on_client_device_all,
+    "app/device/data/json/all": on_device_data_realtime,
 }
 """
 

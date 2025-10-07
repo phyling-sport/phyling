@@ -76,9 +76,9 @@ class PhylingRealtime:
         """
         if enabled:
             self.sio.topicSubscribe(
-                topic=f"client/{self.clientId}/device/all",
-                event="client/device/all",
-                callback=self._callbackClientDeviceAll,
+                topic=f"app/client/{self.clientId}/device/connected_list",
+                event="app/client/device/connected_list",
+                callback=self._callbackClientDeviceConnectedList,
             )
             res = self.api.POST(
                 url=f"/devices/rt/{self.clientId}/all",
@@ -87,8 +87,8 @@ class PhylingRealtime:
             self.allDevices = json.loads(res.data.decode("utf-8"))
         else:
             self.sio.topicUnsubscribe(
-                topic=f"client/{self.clientId}/device/all",
-                event="client/device/all",
+                topic=f"app/client/{self.clientId}/device/connected_list",
+                event="app/client/device/connected_list",
             )
 
     def getDeviceList(self) -> list[dict]:
@@ -98,9 +98,9 @@ class PhylingRealtime:
         """
         return self.allDevices
 
-    def _callbackClientDeviceAll(self, event: str, data: str) -> None:
+    def _callbackClientDeviceConnectedList(self, event: str, data: str) -> None:
         """
-        Callback function for the "client/device/all" event.
+        Callback function for the "client/device/connected_list" event.
         :param event: The event name.
         :param data: The data received from the event.
         """
@@ -117,15 +117,15 @@ class PhylingRealtime:
         """
         if enabled:
             self.sio.topicSubscribe(
-                topic=f"data/{number}/board/status",
-                event="device/board/status",
+                topic=f"app/device/{number}/board/status",
+                event="app/device/board/status",
                 callback=self._callbackClientDeviceStatus,
             )
             self._updateDeviceSettings(number)
         else:
             self.sio.topicUnsubscribe(
-                topic=f"data/{number}/board/status",
-                event="device/board/status",
+                topic=f"app/device/{number}/board/status",
+                event="app/device/board/status",
             )
 
     def getDeviceStatus(self, number: int) -> dict | None:
@@ -145,7 +145,7 @@ class PhylingRealtime:
 
     def _callbackClientDeviceStatus(self, event: str, data: str) -> None:
         """
-        Callback function for the "device/board/status" event.
+        Callback function for the "app/device/board/status" event.
         :param event: The event name.
         :param data: The data received from the event.
         """
@@ -231,14 +231,14 @@ class PhylingRealtime:
         """
         if enabled:
             self.sio.topicSubscribe(
-                topic=f"data/{number}/ind/realtime",
-                event="device/ind/realtime",
+                topic=f"app/device/{number}/ind/json/all",
+                event="app/device/ind/json/all",
                 callback=self._callbackClientDeviceIndicator,
             )
         else:
             self.sio.topicUnsubscribe(
-                topic=f"data/{number}/ind/realtime",
-                event="device/ind/realtime",
+                topic=f"app/device/{number}/ind/json/all",
+                event="app/device/ind/json/all",
             )
 
     def getDeviceIndicator(self, number: int) -> dict | None:
@@ -277,14 +277,14 @@ class PhylingRealtime:
         """
         if enabled:
             self.sio.topicSubscribe(
-                topic=f"data/{number}/data/realtime",
-                event="device/data/realtime",
+                topic=f"app/device/{number}/data/json/all",
+                event="app/device/data/json/all",
                 callback=self._callbackClientDeviceData,
             )
         else:
             self.sio.topicUnsubscribe(
-                topic=f"data/{number}/data/realtime",
-                event="device/data/realtime",
+                topic=f"app/device/{number}/data/json/all",
+                event="app/device/data/json/all",
             )
 
     def getDeviceData(self, number: int) -> dict | None:
@@ -305,7 +305,7 @@ class PhylingRealtime:
 
     def _callbackClientDeviceData(self, event: str, data: str) -> None:
         """
-        Callback function for the "device/data/realtime" event.
+        Callback function for the "app/device/data/json/all" event.
         :param event: The event name.
         :param data: The data received from the event.
         """
