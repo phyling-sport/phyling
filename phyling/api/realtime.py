@@ -76,8 +76,8 @@ class PhylingRealtime:
         """
         if enabled:
             self.sio.topicSubscribe(
-                topic=f"app/client/{self.clientId}/device/connected_list",
-                event="app/client/device/connected_list",
+                topic=f"app/client/{self.clientId}/device/list_connected",
+                event="app/client/device/list_connected",
                 callback=self._callbackClientDeviceConnectedList,
             )
             res = self.api.POST(
@@ -87,8 +87,8 @@ class PhylingRealtime:
             self.allDevices = json.loads(res.data.decode("utf-8"))
         else:
             self.sio.topicUnsubscribe(
-                topic=f"app/client/{self.clientId}/device/connected_list",
-                event="app/client/device/connected_list",
+                topic=f"app/client/{self.clientId}/device/list_connected",
+                event="app/client/device/list_connected",
             )
 
     def getDeviceList(self) -> list[dict]:
@@ -100,7 +100,7 @@ class PhylingRealtime:
 
     def _callbackClientDeviceConnectedList(self, event: str, data: str) -> None:
         """
-        Callback function for the "client/device/connected_list" event.
+        Callback function for the "client/device/list_connected" event.
         :param event: The event name.
         :param data: The data received from the event.
         """
