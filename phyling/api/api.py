@@ -90,6 +90,10 @@ class PhylingAPI:
             return False
 
         response_data = ujson.loads(res.data)
+        if "cgu" in response_data and not response_data["cgu"].get("accepted", False):
+            logging.error("You need to connect to app frontend to accept cgu")
+            self._is_connected = False
+            return False
         self._access_token = response_data.get("access_token")
         self._refresh_token = response_data.get("refresh_token")
         if not self._is_connected:
