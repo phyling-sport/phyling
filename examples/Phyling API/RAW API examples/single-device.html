@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phyling – Single Device</title>
+  <style>
+    :root{color-scheme:dark;--bg:#0b0f14;--panel:#121821;--border:#1f2937;--text:#e6eef7;--muted:#8aa0b6;--accent:#4cc2ff;--btn:#1c2532;--btn-h:#223042;--danger:#ff6b6b;--ok:#35d07f;}
+    *{box-sizing:border-box;}
+    body{margin:0;min-height:100vh;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);display:flex;justify-content:center;padding:32px 16px 48px;}
+    main{width:min(720px,100%);display:grid;gap:24px;}
+    h1{margin:0;font-size:22px;letter-spacing:.3px;text-align:center;}
+    section,form{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:18px;display:grid;gap:14px;}
+    label{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:6px;}
+    label.remember{display:inline-flex;align-items:center;gap:8px;font-size:13px;text-transform:none;letter-spacing:0;margin-bottom:0;color:var(--muted);}
+    label.remember input{width:auto;}
+    input,button{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:#0f141c;color:inherit;font-size:14px;}
+    input:focus,button:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);}
+    button{cursor:pointer;background:var(--btn);transition:background .18s ease,transform .05s ease;text-transform:uppercase;font-weight:600;letter-spacing:.08em;}
+    button:hover:not(:disabled){background:var(--btn-h);}
+    button:active:not(:disabled){transform:translateY(1px);}
+    button:disabled{opacity:.55;cursor:not-allowed;}
+    .actions{display:flex;gap:10px;flex-wrap:wrap;}
+    .actions button{flex:1 1 160px;}
+    .actions .danger{border-color:rgba(255,107,107,.35);background:rgba(255,107,107,.16);color:var(--danger);}
+    .actions .ok{border-color:rgba(53,208,127,.35);background:rgba(53,208,127,.16);color:var(--ok);}
+    pre{margin:0;padding:12px;border-radius:10px;background:#0b1017;border:1px solid var(--border);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;white-space:pre-wrap;word-break:break-word;max-height:280px;overflow:auto;}
+    .status-line{font-size:13px;color:var(--muted);min-height:18px;}
+    .status-line.error{color:var(--danger);}
+    .status-line.success{color:var(--ok);}
+    .summary{display:grid;gap:4px;font-size:13px;color:var(--muted);}
+    .summary div{display:flex;justify-content:start;gap:12px;}
+    .summary .value{color:var(--text);font-weight:600;}
+  </style>
+  <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" integrity="sha384-mkQ3/7FUtcGyoppY6bz/PORYoGqOl7/aSUMn2ymDOJcapfS6PHqxhRTMh1RR0Q6+" crossorigin="anonymous"></script>
+</head>
+<body>
+  <main>
+    <h1>Phyling - Single device</h1>
+
+    <form id="connectForm" autocomplete="on" onsubmit="return onSubmit(event)">
+      <div>
+        <label for="apiBase">Adresse API</label>
+        <input id="apiBase" name="apiBase" placeholder="https://api.app.phyling.fr">
+      </div>
+      <div>
+        <label for="apiKey">Clé API</label>
+        <input id="apiKey" name="apiKey" type="password" autocomplete="off" placeholder="ApiKey abc123..." required>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px;">Le client_id est récupéré automatiquement via GET /login.</div>
+      </div>
+      <label class="remember">
+        <input id="rememberKey" type="checkbox">
+        Sauvegarder la clé localement
+      </label>
+      <div>
+        <label for="deviceNumber">Numéro de device</label>
+        <input id="deviceNumber" name="deviceNumber" inputmode="numeric" pattern="[0-9]*" required>
+      </div>
+      <button type="submit">Valider</button>
+      <div id="statusLine" class="status-line"></div>
+    </form>
+
+    <section id="recordSection" hidden>
+      <div class="actions">
+        <button class="ok" type="button" onclick="rpcRequest({feature:'record',cmd_type:'cmd_start',params:{},wait_for_result:false})">Start record</button>
+        <button class="danger" type="button" onclick="rpcRequest({feature:'record',cmd_type:'cmd_stop',params:{},wait_for_result:false})">Stop record</button>
+      </div>
+      <div id="socketState" class="status-line"></div>
+    </section>
+
+    <section>
+      <div>
+        <strong>Indicator JSON</strong>
+      </div>
+      <pre id="indicatorJson">{}</pre>
+    </section>
+
+    <section>
+      <div>
+        <strong>Status JSON (settings ⊕ status)</strong>
+      </div>
+      <div id="statusSummary" class="summary">
+        <div><span>number</span><span class="value">—</span></div>
+        <div><span>name</span><span class="value">—</span></div>
+        <div><span>is_connected</span><span class="value">—</span></div>
+        <div><span>state</span><span class="value">—</span></div>
+        <div><span>battery</span><span class="value">—</span></div>
+        <div><span>epoch</span><span class="value">—</span></div>
+      </div>
+      <pre id="statusJson">{}</pre>
+    </section>
+  </main>
+
+  <script>
+    const storageKey = 'single-indicator';
+    const defaultApi = 'https://api.staging.cl.phyling.fr';
+    const statusLine = document.getElementById('statusLine');
+    const socketState = document.getElementById('socketState');
+    const recordSection = document.getElementById('recordSection');
+    const indicatorJson = document.getElementById('indicatorJson');
+    const statusJson = document.getElementById('statusJson');
+    const statusSummary = document.getElementById('statusSummary');
+    const apiInput = document.getElementById('apiBase');
+    const apiKeyInput = document.getElementById('apiKey');
+    const rememberKey = document.getElementById('rememberKey');
+    const deviceInput = document.getElementById('deviceNumber');
+
+    const state = {
+      apiBase: localStorage.getItem(`${storageKey}:api`) || defaultApi,
+      apiKey: localStorage.getItem(`${storageKey}:rememberKey`) === 'true'
+        ? (localStorage.getItem(`${storageKey}:apiKey`) || '')
+        : '',
+      authorization: null,
+      rememberApiKey: localStorage.getItem(`${storageKey}:rememberKey`) === 'true',
+      user: null,
+      socket: null,
+      deviceNumber: null,
+      settings: null,
+      indicator: null,
+      status: null,
+    };
+
+    apiInput.value = state.apiBase;
+    deviceInput.value = localStorage.getItem(`${storageKey}:device`) || '';
+    rememberKey.checked = state.rememberApiKey;
+    if (state.rememberApiKey && state.apiKey) {
+      apiKeyInput.value = state.apiKey;
+      state.authorization = `ApiKey ${state.apiKey}`;
+    } else {
+      apiKeyInput.value = '';
+    }
+
+    apiKeyInput.addEventListener('input', () => {
+      if (rememberKey.checked) {
+        localStorage.setItem(`${storageKey}:apiKey`, apiKeyInput.value);
+      }
+    });
+
+    rememberKey.addEventListener('change', () => {
+      state.rememberApiKey = rememberKey.checked;
+      localStorage.setItem(`${storageKey}:rememberKey`, state.rememberApiKey ? 'true' : 'false');
+      if (!state.rememberApiKey) {
+        localStorage.removeItem(`${storageKey}:apiKey`);
+        apiKeyInput.value = '';
+      } else if (state.apiKey) {
+        localStorage.setItem(`${storageKey}:apiKey`, state.apiKey);
+        apiKeyInput.value = state.apiKey;
+      }
+    });
+
+    function setStatus(message, type = '') {
+      statusLine.textContent = message || '';
+      statusLine.className = `status-line${type ? ' ' + type : ''}`;
+    }
+
+    function setSocketStatus(message, type = '') {
+      socketState.textContent = message || '';
+      socketState.className = `status-line${type ? ' ' + type : ''}`;
+    }
+
+    function formatJson(data) {
+      if (data === null || data === undefined) return '{}';
+      try {
+        return JSON.stringify(data, null, 2);
+      } catch (err) {
+        return String(data);
+      }
+    }
+
+    function deepMerge(into, patch) {
+      if (!patch || typeof patch !== 'object') return into;
+      if (!into || typeof into !== 'object' || Array.isArray(into)) into = {};
+      for (const [key, value] of Object.entries(patch)) {
+        if (Array.isArray(value)) {
+          into[key] = value.map((item) => (
+            item && typeof item === 'object'
+              ? deepMerge(Array.isArray(item) ? [] : {}, item)
+              : item
+          ));
+        } else if (value && typeof value === 'object') {
+          const base = into[key];
+          into[key] = deepMerge(
+            base && typeof base === 'object' && !Array.isArray(base) ? base : {},
+            value
+          );
+        } else {
+          into[key] = value;
+        }
+      }
+      return into;
+    }
+
+    function renderStatusSummary() {
+      const source = state.status || state.settings || {};
+      const rows = [
+        ['number', source.number],
+        ['name', source.name],
+        ['is_connected', source.is_connected],
+        ['state', source.state],
+        ['battery', source.battery],
+        ['epoch', source.epoch],
+      ];
+      statusSummary.innerHTML = rows.map(([label, value]) => {
+        let text = '—';
+        if (value !== undefined && value !== null && value !== '') {
+          text = typeof value === 'boolean' ? (value ? 'true' : 'false') : String(value);
+        }
+        return `<div><span>${label}</span><span class="value">${text}</span></div>`;
+      }).join('');
+    }
+
+    async function apiFetch(path, opts = {}) {
+      const base = state.apiBase?.replace(/\/$/, '');
+      if (!base) throw new Error('Adresse API invalide.');
+      const url = `${base}/${String(path).replace(/^\//, '')}`;
+      const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+      if (state.authorization) headers['Authorization'] = state.authorization;
+      const res = await fetch(url, { ...opts, headers });
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '');
+        throw new Error(`HTTP ${res.status} ${res.statusText}${txt ? ` – ${txt}` : ''}`);
+      }
+      if ((res.headers.get('content-type') || '').includes('application/json')) {
+        return res.json();
+      }
+      return res.text();
+    }
+
+    async function loginWithApiKey(apiKey) {
+      const key = (apiKey || '').trim();
+      if (!key) {
+        throw new Error('Clé API manquante.');
+      }
+      const prevKey = state.apiKey;
+      const prevAuth = state.authorization;
+      state.apiKey = key;
+      state.authorization = `ApiKey ${key}`;
+      try {
+        const payload = await apiFetch('/login');
+        const userPayload = payload && typeof payload === 'object'
+          ? (payload.user && typeof payload.user === 'object' ? payload.user : payload)
+          : null;
+        if (!userPayload || userPayload.client_id == null) {
+          throw new Error('Réponse /login invalide (client_id manquant).');
+        }
+        state.user = userPayload;
+        if (state.rememberApiKey) {
+          localStorage.setItem(`${storageKey}:apiKey`, key);
+        } else {
+          localStorage.removeItem(`${storageKey}:apiKey`);
+        }
+        return state.user;
+      } catch (err) {
+        state.apiKey = prevKey;
+        state.authorization = prevAuth;
+        throw err;
+      }
+    }
+
+    async function fetchDeviceSettings(deviceNumber) {
+      if (!state.user) throw new Error('Session invalide (reconnectez-vous).');
+      const clientId = state.user.client_id;
+      const path = `/devices/rt/${clientId}/${deviceNumber}/settings`;
+      const settings = await apiFetch(path);
+      state.settings = settings && typeof settings === 'object' ? settings : {};
+      state.status = deepMerge({}, state.settings);
+      statusJson.textContent = formatJson(state.status);
+      renderStatusSummary();
+      return state.settings;
+    }
+
+    function detachSocket() {
+      if (state.socket) {
+        try { state.socket.disconnect(); } catch {}
+        state.socket = null;
+      }
+    }
+
+    function getSocketBase() {
+      try {
+        const url = new URL(state.apiBase);
+        const proto = url.protocol === 'http:' ? 'ws:' : 'wss:';
+        return `${proto}//${url.host}`;
+      } catch {
+        return null;
+      }
+    }
+
+    function subscribeToDevice() {
+      if (!state.socket || !state.socket.connected) return;
+      if (!state.deviceNumber) return;
+      if (!state.authorization) {
+        setSocketStatus('Token manquant – reconnectez-vous.', 'error');
+        return;
+      }
+      const num = state.deviceNumber;
+      const indicatorRoom = `app/device/${num}/ind/json/all`;
+      const statusRoom = `app/device/${num}/board/status`;
+      state.socket.emit('subscribe', { authorization: state.authorization, room: indicatorRoom });
+      state.socket.emit('subscribe', { authorization: state.authorization, room: statusRoom });
+      setSocketStatus(`Souscription aux rooms ${indicatorRoom} & ${statusRoom}`, 'success');
+    }
+
+    function handleIndicatorPayload(payload) {
+      state.indicator = payload;
+      indicatorJson.textContent = formatJson(payload);
+    }
+
+    function handleStatusPayload(payload) {
+      const base = state.settings ? JSON.parse(JSON.stringify(state.settings)) : {};
+      state.status = deepMerge(base, payload);
+      statusJson.textContent = formatJson(state.status);
+      renderStatusSummary();
+    }
+
+    async function rpcRequest(payload) {
+      if (!state.user) throw new Error('Non connecté');
+      if (!state.deviceNumber) throw new Error('Device manquant');
+      const path = `/devices/rt/${state.user.client_id}/${state.deviceNumber}/rpc/request`;
+      await apiFetch(path, { method: 'POST', body: JSON.stringify(payload) });
+      setSocketStatus(`Commande ${payload.cmd_type} envoyée.`, 'success');
+    }
+
+    function ensureSocketConnected() {
+      return new Promise((resolve, reject) => {
+        const base = getSocketBase();
+        if (!base) {
+          reject(new Error('Impossible de déduire le serveur Socket.IO depuis cette adresse API.'));
+          return;
+        }
+        detachSocket();
+        const socket = io(base, { transports: ['websocket'] });
+        state.socket = socket;
+
+        const cleanup = () => {
+          socket.off('connect', onConnect);
+          socket.off('connect_error', onConnectError);
+        };
+
+        const onConnect = () => {
+          cleanup();
+          setSocketStatus('Socket connecté.', 'success');
+          subscribeToDevice();
+          resolve();
+        };
+        const onConnectError = (err) => {
+          cleanup();
+          setSocketStatus(`Erreur socket: ${err?.message || err}`, 'error');
+          reject(err);
+        };
+
+        socket.on('connect', onConnect);
+        socket.on('connect_error', onConnectError);
+        socket.on('disconnect', (reason) => {
+          setSocketStatus(`Socket déconnecté: ${reason}`, 'error');
+        });
+
+        socket.on('app/device/ind/json/all', handleIndicatorPayload);
+        socket.on('app/device/data/json/all', handleIndicatorPayload);
+        socket.on('app/device/board/status', handleStatusPayload);
+      });
+    }
+
+    async function onSubmit(event) {
+      event.preventDefault();
+      setStatus('');
+      setSocketStatus('');
+      recordSection.hidden = true;
+
+      const apiBase = apiInput.value.trim() || defaultApi;
+      const apiKeyValue = apiKeyInput.value.trim();
+      const deviceRaw = deviceInput.value.trim();
+      const number = Number(deviceRaw);
+
+      try {
+        if (!Number.isFinite(number)) {
+          throw new Error('Numéro de device invalide.');
+        }
+        if (!apiKeyValue) {
+          throw new Error('Clé API requise.');
+        }
+
+        state.apiBase = apiBase;
+        state.deviceNumber = number;
+        state.rememberApiKey = rememberKey.checked;
+
+        localStorage.setItem(`${storageKey}:api`, apiBase);
+        localStorage.setItem(`${storageKey}:device`, deviceRaw);
+        localStorage.setItem(`${storageKey}:rememberKey`, state.rememberApiKey ? 'true' : 'false');
+        if (state.rememberApiKey) {
+          localStorage.setItem(`${storageKey}:apiKey`, apiKeyValue);
+        } else {
+          localStorage.removeItem(`${storageKey}:apiKey`);
+        }
+
+        setStatus('Connexion en cours…');
+        await loginWithApiKey(apiKeyValue);
+        setStatus('Authentification réussie.', 'success');
+
+        await fetchDeviceSettings(number);
+        setStatus('Réglages récupérés.', 'success');
+
+        await ensureSocketConnected();
+        recordSection.hidden = false;
+      } catch (err) {
+        setStatus(err.message || String(err), 'error');
+        detachSocket();
+      }
+      return false;
+    }
+
+    renderStatusSummary();
+    window.rpcRequest = rpcRequest;
+    window.onSubmit = onSubmit;
+  </script>
+</body>
+</html>

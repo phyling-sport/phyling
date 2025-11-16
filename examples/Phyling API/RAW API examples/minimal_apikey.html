@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8">
+    <title>Phyling – minimal</title>
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+  </head>
+  <body>
+    <main>
+      <h1>Phyling – minimal</h1>
+      <pre id="log" style="height: 90vh; overflow-y: scroll; border: 1px solid #ccc; padding: 10px;"></pre>
+    </main>
+    <script>
+      async function main() {
+        const $ = (sel) => document.querySelector(sel);
+        const logBox = $('#log');  // to show logs
+
+        const apiUrl = 'https://api.app.phyling.fr';
+        const apiKey = '<key>';
+        const clientId = 2;
+        const deviceNumber = 10300378;
+
+        const authorization = `ApiKey ${apiKey}`
+        const socketBase = apiUrl.replace(/^http/, 'ws');
+        const socket = io(socketBase, { transports: ['websocket'] });
+
+        socket.on('connect', () => {
+          socket.emit('subscribe', { authorization, room: `app/client/${clientId}/device/list_connected` });
+          socket.emit('subscribe', { authorization, room: `app/device/${deviceNumber}/ind/json/all` });
+          socket.emit('subscribe', { authorization, room: `app/device/${deviceNumber}/board/status` });
+          socket.emit('subscribe', { authorization, room: `app/device/${deviceNumber}/data/json/all` });
+        });
+
+        socket.onAny((event, ...args) => {
+          logBox.textContent += `⟵ event: ${event}\n${JSON.stringify(args[0], null, 2)}\n`;
+        });
+      }
+      main();
+    </script>
+  </body>
+</html>

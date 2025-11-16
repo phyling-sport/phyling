@@ -49,8 +49,10 @@ class PhylingRealtime:
         :return: A string representation of the PhylingRealtime instance.
         """
         return (
-            f"PhylingRealtime(mail={self.api.mail}, baseurl={self.api.baseurl})"
-            f" -> {'Connected' if self.api.is_connected() else 'Not connected'}"
+            f"PhylingRealtime(baseurl={self.baseurl}) -> "
+            f"Connected as {self.connected_user['mail']}"
+            if self.is_connected()
+            else "Not connected"
         )
 
     def selectClient(self, clientId: int) -> bool:
@@ -104,7 +106,6 @@ class PhylingRealtime:
         :param event: The event name.
         :param data: The data received from the event.
         """
-        data = json.loads(data)
         self.allDevices = data
 
     """ --------------- Device status --------------- """
@@ -149,7 +150,6 @@ class PhylingRealtime:
         :param event: The event name.
         :param data: The data received from the event.
         """
-        data = json.loads(data)
         number = data.get("number", None)
         if number is not None:
             self._updateDeviceStatus(number, data)
@@ -262,7 +262,6 @@ class PhylingRealtime:
         :param event: The event name.
         :param data: The data received from the event.
         """
-        data = json.loads(data)
         number = data.get("number", None)
         if number is not None:
             self.devicesIndicators[number] = data
@@ -309,7 +308,6 @@ class PhylingRealtime:
         :param event: The event name.
         :param data: The data received from the event.
         """
-        data = json.loads(data)
         number = data.get("number", None)
         if number is not None:
             self.devicesData[number] = data
