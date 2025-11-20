@@ -4,7 +4,7 @@ Minimal OAuth + realtime example for Phyling.
 
 Installation et exécution :
 > pip install -r requirements.txt
-> python minimal_oauth.py --api-url http://localhost:5001 --port 2000 --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET --device-number 10300042
+> python minimal_oauth.py --api-url https://api.app.phyling.fr --port 2000 --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET --device-number 10300042
 
 Then open http://localhost:2000/ in your browser.
 """  # noqa: E501
