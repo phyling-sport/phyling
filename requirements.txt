@@ -10,3 +10,4 @@ python-dotenv
 # specific
 urllib3
 aiohttp
+bleak
