@@ -15,7 +15,7 @@ def load_requirements(path):
 
 setup(
     name="phyling",
-    version="7.0.0b0",
+    version="7.0.0",
     description="Phyling public package",
     license="MIT",
     license_files=("LICENSE.txt",),

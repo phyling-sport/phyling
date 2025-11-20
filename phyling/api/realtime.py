@@ -181,7 +181,7 @@ class PhylingRealtime:
         method: str,
         params: dict | None = None,
         timeout: float = -1,
-        wait_for_result: bool = True,
+        wait_for_result: bool = False,
     ) -> dict:
         """Execute a command on a device
         You need to send at least the method or the feature/cmd_type
