@@ -34,7 +34,7 @@ La documentation de l'API Phyling est disponible ici : [docs.phyling.fr/api](htt
 
 **Fichiers HTML/JS bruts**
 Dans le dossier `examples/Phyling API/RAW API examples` :
-- `minimal_oauth.html` : Exemple minimal de connexion OAuth. Pour le lancer, installez les dépendances puis `python minimal_oauth.py -h`
+- `minimal_oauth.py` : Exemple minimal de connexion OAuth. Pour le lancer, installez les dépendances puis `python minimal_oauth.py -h`
 - `minimal_apikey.html` : Exemple minimal de connexion via clé API. Pour le lancer, mettez à jour dans le code `apiUrl`, `apiKey`, `clientId`, `deviceNumber` (numéro de device de test) puis double-cliquez sur le fichier pour l'ouvrir.
 
 - `realtime.html` : tableau de bord multi-devices. Il gère l'authentification complète, la persistance des tokens, le merge `settings` + `status`, la sélection et l'envoi périodique des clés temps réel, ainsi que l'affichage des indicateurs et courbes par device.
