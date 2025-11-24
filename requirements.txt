@@ -10,4 +10,5 @@ python-dotenv
 # specific
 urllib3
 aiohttp
+python-socketio
 bleak

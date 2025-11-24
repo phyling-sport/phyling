@@ -44,6 +44,10 @@ repos:
         types: [python]
         pass_filenames: false
         always_run: true
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.6.1
+    hooks:
+      - id: nbstripout
   - repo: https://github.com/compilerla/conventional-pre-commit
     rev: v4.2.0
     hooks:
