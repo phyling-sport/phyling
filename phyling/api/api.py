@@ -18,31 +18,33 @@ class PhylingAPI:
     PhylingAPI is a class that provides an interface for interacting with the Phyling API.
     """
 
-    mail = None
-    password = None
+    api_key = None
     baseurl = None
+    connected_user: dict | None = None
+    client_id: int | None = None
 
     _http = None
-    _access_token = None
-    _refresh_token = None
-    _is_connected = False
 
-    def __init__(
-        self, mail: str, password: str, url: str = "https://api.app.phyling.fr"
-    ):
+    def __init__(self, api_key: str, url: str = "https://api.app.phyling.fr"):
         """
         Initializes the PhylingAPI with the provided API key.
-        :param mail: The email address of the user.
-        :param password: The password of the user.
+        :param api_key: The connection API key
         :param baseurl: The URL of the Phyling API. Default is "app.phyling.fr".
         """
-        self.mail = mail
-        self.password = password
+        self.api_key = api_key
         self.baseurl = url
         if self.baseurl.endswith("/"):
             self.baseurl = self.baseurl[:-1]
         self._http = urllib3.PoolManager()
-        self.login()
+        res = self.GET("/login")
+        if res.status == 200:
+            self.connected_user = ujson.loads(res.data.decode("utf-8"))
+            self.client_id = self.connected_user["client_id"]
+            logging.info(self)
+        else:
+            self.connected_user = None
+            self.client_id = None
+            logging.error("Failed to connect to API")
 
     def __str__(self) -> str:
         """
@@ -50,8 +52,10 @@ class PhylingAPI:
         :return: A string representation of the PhylingAPI instance.
         """
         return (
-            f"PhylingAPI(mail={self.mail}, baseurl={self.baseurl})"
-            f" -> {'Connected' if self._is_connected else 'Not connected'}"
+            f"PhylingAPI(baseurl={self.baseurl}) -> "
+            f"Connected as {self.connected_user['mail']}"
+            if self.is_connected()
+            else "Not connected"
         )
 
     def is_connected(self) -> bool:
@@ -59,77 +63,7 @@ class PhylingAPI:
         Checks if the PhylingAPI is connected.
         :return: True if connected, False otherwise.
         """
-        return self._is_connected
-
-    def login(self) -> bool:
-        """
-        Logs in to the Phyling API using the provided email and password.
-        :return: True if login is successful, False otherwise.
-        """
-        res = self.request(
-            auto_login=False,
-            method="POST",
-            url="/login",
-            headers={
-                "Content-Type": "application/json",
-            },
-            body=ujson.dumps(
-                {
-                    "mail": self.mail,
-                    "password": self.password,
-                }
-            ),
-            timeout=3,
-            retries=False,
-        )
-        if not res:
-            self._is_connected = False
-            return False
-        if res.status != 200:
-            self._is_connected = False
-            return False
-
-        response_data = ujson.loads(res.data)
-        if "cgu" in response_data and not response_data["cgu"].get("accepted", False):
-            logging.error("You need to connect to app frontend to accept cgu")
-            self._is_connected = False
-            return False
-        self._access_token = response_data.get("access_token")
-        self._refresh_token = response_data.get("refresh_token")
-        if not self._is_connected:
-            self._is_connected = True
-        return True
-
-    def refresh_token(self) -> bool:
-        """
-        Refreshes the access token using the refresh token.
-        :return: True if token refresh is successful, False otherwise.
-        """
-        res = self.request(
-            auto_login=False,
-            method="POST",
-            url="/refresh",
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self._refresh_token}",
-            },
-            timeout=3,
-            retries=False,
-        )
-        if not res:
-            self._is_connected = False
-            return False
-
-        if res.status == 200:
-            response_data = ujson.loads(res.data)
-            self._access_token = response_data.get("access_token")
-        else:
-            if not self.login():
-                self._is_connected = False
-                return False
-
-        self._is_connected = True
-        return True
+        return self.connected_user is not None
 
     def request(
         self,
@@ -139,7 +73,6 @@ class PhylingAPI:
         input_path=None,
         silent=False,
         timeout=12,
-        auto_login=True,
         **kwargs,
     ) -> Union[urllib3.HTTPResponse, None]:
         """Make a http request on API
@@ -152,7 +85,6 @@ class PhylingAPI:
             input_path (str, optional): The path to the input file. Defaults to None.
             silent (bool, optional): If True, dont log any informations. Default to False
             timeout (int, optional): The timeout for the request. Default to 12 seconds.
-            auto_login (bool, optional): If False, dont automatically login. Used for login request
             **kwargs: Additional arguments for the request.
 
         Returns:
@@ -162,13 +94,10 @@ class PhylingAPI:
             url = self.baseurl + url
         elif not url.startswith("/"):
             url = "/" + url
-        if not self._access_token and auto_login:
-            if not self.login():
-                return None
         if not headers:
             headers = {}
-        if "Authorization" not in headers and auto_login:
-            headers["Authorization"] = f"Bearer {self._access_token}"
+        if "Authorization" not in headers:
+            headers["Authorization"] = f"ApiKey {self.api_key}"
 
         if input_path:
             extension = input_path.split(".")[-1]
@@ -195,25 +124,12 @@ class PhylingAPI:
                 timeout=timeout,
                 **kwargs,
             )
-            if res.status == 401 and auto_login:
-                if not self.refresh_token():
-                    return None
-                headers["Authorization"] = f"Bearer {self._access_token}"
-                res = self._http.request(
-                    method=method,
-                    url=url,
-                    headers=headers,
-                    timeout=timeout,
-                    **kwargs,
-                )
 
             if not silent:
                 msg = f"[API_CALL] {time.time() - start_time:.2f}s - {method} {url} - {res.status}"
                 if not (res.status >= 200 and res.status <= 299):
                     if res.status == 502:  # Bad gateway
                         logging.warning(msg + " (Bad gateway: Server is closed ?)")
-                    elif res.status == 401 and auto_login:
-                        logging.warning(msg + " (Invalid token, need to be refreshed)")
                     else:
                         msg += f" ({utils.get_error_message(res)})"
                         logging.error(msg)
@@ -245,7 +161,6 @@ class PhylingAPI:
         input_path=None,
         silent=False,
         timeout=12,
-        auto_login=True,
         **kwargs,
     ) -> Union[urllib3.HTTPResponse, None]:
         """Make a GET request on API
@@ -256,7 +171,6 @@ class PhylingAPI:
             input_path (str, optional): The path to the input file. Defaults to None.
             silent (bool, optional): If True, dont log any informations. Default to False
             timeout (int, optional): The timeout for the request. Default to 12 seconds.
-            auto_login (bool, optional): If False, dont automatically login. Used for login request
             **kwargs: Additional arguments for the request.
 
         Returns:
@@ -269,7 +183,6 @@ class PhylingAPI:
             input_path=input_path,
             silent=silent,
             timeout=timeout,
-            auto_login=auto_login,
             **kwargs,
         )
 
@@ -280,7 +193,6 @@ class PhylingAPI:
         input_path=None,
         silent=False,
         timeout=12,
-        auto_login=True,
         **kwargs,
     ) -> Union[urllib3.HTTPResponse, None]:
         """Make a POST request on API
@@ -291,7 +203,6 @@ class PhylingAPI:
             input_path (str, optional): The path to the input file. Defaults to None.
             silent (bool, optional): If True, dont log any informations. Default to False
             timeout (int, optional): The timeout for the request. Default to 12 seconds.
-            auto_login (bool, optional): If False, dont automatically login. Used for login request
             **kwargs: Additional arguments for the request.
 
         Returns:
@@ -304,7 +215,6 @@ class PhylingAPI:
             input_path=input_path,
             silent=silent,
             timeout=timeout,
-            auto_login=auto_login,
             **kwargs,
         )
 
@@ -315,7 +225,6 @@ class PhylingAPI:
         input_path=None,
         silent=False,
         timeout=12,
-        auto_login=True,
         **kwargs,
     ) -> Union[urllib3.HTTPResponse, None]:
         """Make a PUT request on API
@@ -326,7 +235,6 @@ class PhylingAPI:
             input_path (str, optional): The path to the input file. Defaults to None.
             silent (bool, optional): If True, dont log any informations. Default to False
             timeout (int, optional): The timeout for the request. Default to 12 seconds.
-            auto_login (bool, optional): If False, dont automatically login. Used for login request
             **kwargs: Additional arguments for the request.
 
         Returns:
@@ -339,7 +247,6 @@ class PhylingAPI:
             input_path=input_path,
             silent=silent,
             timeout=timeout,
-            auto_login=auto_login,
             **kwargs,
         )
 
@@ -350,7 +257,6 @@ class PhylingAPI:
         input_path=None,
         silent=False,
         timeout=12,
-        auto_login=True,
         **kwargs,
     ) -> Union[urllib3.HTTPResponse, None]:
         """Make a DELETE request on API
@@ -361,7 +267,6 @@ class PhylingAPI:
             input_path (str, optional): The path to the input file. Defaults to None.
             silent (bool, optional): If True, dont log any informations. Default to False
             timeout (int, optional): The timeout for the request. Default to 12 seconds.
-            auto_login (bool, optional): If False, dont automatically login. Used for login request
             **kwargs: Additional arguments for the request.
 
         Returns:
@@ -374,7 +279,6 @@ class PhylingAPI:
             input_path=input_path,
             silent=silent,
             timeout=timeout,
-            auto_login=auto_login,
             **kwargs,
         )
 

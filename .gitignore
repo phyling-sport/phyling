@@ -134,5 +134,6 @@ dmypy.json
 venv
 *.c
 
+.pypirc
 test.json
 example_data.json

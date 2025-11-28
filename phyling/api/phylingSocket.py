@@ -64,7 +64,7 @@ class PhylingSocket:
             if counter > 0:
                 sio.emit(
                     "subscribe",
-                    {"room": room, "token": self.api._access_token},
+                    {"room": room, "authorization": f"ApiKey {self.api.api_key}"},
                 )
 
     def _on_disconnect(self) -> None:
@@ -85,7 +85,7 @@ class PhylingSocket:
             if sio.connected:
                 sio.emit(
                     "subscribe",
-                    {"room": topic, "token": self.api._access_token},
+                    {"room": topic, "authorization": f"ApiKey {self.api.api_key}"},
                 )
         else:
             self.socket_rooms[topic] += 1
@@ -102,5 +102,5 @@ class PhylingSocket:
             if sio.connected:
                 sio.emit(
                     "unsubscribe",
-                    {"room": topic, "token": self.api._access_token},
+                    {"room": topic, "authorization": f"ApiKey {self.api.api_key}"},
                 )

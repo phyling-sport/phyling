@@ -13,8 +13,6 @@ class PhylingRealtime:
 
     api: PhylingAPI = None
     sio: PhylingSocket = None  # type: ignore
-    user: dict | None = None
-    clientId: int = 0
 
     allDevices: list[dict] = []
     devicesStatus: dict[int, dict] = {}
@@ -24,23 +22,11 @@ class PhylingRealtime:
     def __init__(self, api: PhylingAPI):
         """
         Initializes the PhylingRealtime with the provided API key.
-        :param mail: The email address of the user.
-        :param password: The password of the user.
-        :param baseurl: The URL of the Phyling API. Default is "app.phyling.fr".
+        :param api: An instance of the PhylingAPI class.
         """
         self.api = api
         if not self.api.is_connected():
-            self.login()
-        if not self.api.is_connected():
             raise ConnectionError("Unable to connect to the Phyling API.")
-        res = api.GET(url="/login")
-        self.user = json.loads(res.data.decode("utf-8"))
-        if not self.user:
-            raise ConnectionError(
-                "Unable to retrieve user information from the Phyling API."
-            )
-        self.clientId = self.user["client_id"]
-
         self.sio = PhylingSocket(api=self.api)
 
     def __str__(self) -> str:
@@ -48,10 +34,7 @@ class PhylingRealtime:
         Returns a string representation of the PhylingRealtime instance.
         :return: A string representation of the PhylingRealtime instance.
         """
-        return (
-            f"PhylingRealtime(mail={self.api.mail}, baseurl={self.api.baseurl})"
-            f" -> {'Connected' if self.api.is_connected() else 'Not connected'}"
-        )
+        return f"PhylingRealtime({str(self.api)})"
 
     def selectClient(self, clientId: int) -> bool:
         """
@@ -60,12 +43,12 @@ class PhylingRealtime:
         :param clientId: The ID of the client to select.
         :return: True if the client was selected successfully, False otherwise.
         """
-        if "Admin" not in self.user["roles"]:
+        if "Admin" not in self.api.connected_user["roles"]:
             logging.error("Only admin users can select a client.")
             return False
-        if clientId == self.clientId:
+        if clientId == self.api.client_id:
             return True
-        self.clientId = int(clientId)
+        self.api.client_id = int(clientId)
         return True
 
     """ --------------- Device list --------------- """
@@ -76,18 +59,18 @@ class PhylingRealtime:
         """
         if enabled:
             self.sio.topicSubscribe(
-                topic=f"app/client/{self.clientId}/device/list_connected",
+                topic=f"app/client/{self.api.client_id}/device/list_connected",
                 event="app/client/device/list_connected",
                 callback=self._callbackClientDeviceConnectedList,
             )
             res = self.api.POST(
-                url=f"/devices/rt/{self.clientId}/all",
+                url=f"/devices/rt/{self.api.client_id}/all",
                 body="{}",
             )
             self.allDevices = json.loads(res.data.decode("utf-8"))
         else:
             self.sio.topicUnsubscribe(
-                topic=f"app/client/{self.clientId}/device/list_connected",
+                topic=f"app/client/{self.api.client_id}/device/list_connected",
                 event="app/client/device/list_connected",
             )
 
@@ -104,7 +87,6 @@ class PhylingRealtime:
         :param event: The event name.
         :param data: The data received from the event.
         """
-        data = json.loads(data)
         self.allDevices = data
 
     """ --------------- Device status --------------- """
@@ -149,13 +131,12 @@ class PhylingRealtime:
         :param event: The event name.
         :param data: The data received from the event.
         """
-        data = json.loads(data)
         number = data.get("number", None)
         if number is not None:
             self._updateDeviceStatus(number, data)
 
     def _updateDeviceSettings(self, number: int) -> None:
-        res = self.api.GET(url=f"/devices/rt/{self.clientId}/{number}/settings")
+        res = self.api.GET(url=f"/devices/rt/{self.api.client_id}/{number}/settings")
         if res.status == 200:
             settings = json.loads(res.data.decode("utf-8"))
             logging.info(f"Initial settings for device {number}: {settings}")
@@ -181,7 +162,7 @@ class PhylingRealtime:
         method: str,
         params: dict | None = None,
         timeout: float = -1,
-        wait_for_result: bool = True,
+        wait_for_result: bool = False,
     ) -> dict:
         """Execute a command on a device
         You need to send at least the method or the feature/cmd_type
@@ -210,7 +191,7 @@ class PhylingRealtime:
             503: Service unavailable (device is turning off, etc.)
         """
         return self.api.POST(
-            url=f"/devices/rt/{self.clientId}/{number}/rpc/request",
+            url=f"/devices/rt/{self.api.client_id}/{number}/rpc/request",
             body=json.dumps(
                 {
                     "method": method,
@@ -262,7 +243,6 @@ class PhylingRealtime:
         :param event: The event name.
         :param data: The data received from the event.
         """
-        data = json.loads(data)
         number = data.get("number", None)
         if number is not None:
             self.devicesIndicators[number] = data
@@ -309,7 +289,6 @@ class PhylingRealtime:
         :param event: The event name.
         :param data: The data received from the event.
         """
-        data = json.loads(data)
         number = data.get("number", None)
         if number is not None:
             self.devicesData[number] = data

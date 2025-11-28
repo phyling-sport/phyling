@@ -1,0 +1,1724 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Phyling – Realtime</title>
+  <style>
+    :root {
+      --bg: #0b0f14; --panel: #121821; --muted: #8aa0b6; --text: #e6eef7;
+      --acc: #4cc2ff; --ok: #35d07f; --warn: #ffcc00; --err: #ff6b6b;
+      --btn: #1c2532; --btn-h: #223042; --card: #0f141c; --border: #223048;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; background: var(--bg); color: var(--text); }
+    header { padding: 14px 16px; border-bottom: 1px solid var(--border); background: var(--panel); position: sticky; top: 0; z-index: 50; }
+    header h1 { margin: 0; font-size: 18px; letter-spacing: .3px; }
+    main { max-width: 1100px; margin: 0 auto; padding: 18px 16px 48px; }
+
+    .row { display: grid; gap: 12px; }
+    @media (min-width: 880px) { .row { grid-template-columns: 1.2fr 1fr; } }
+
+    .section { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+    .section h2 { margin: 0 0 8px; font-size: 15px; color: var(--muted); font-weight: 600; }
+
+    .grid { display: grid; gap: 12px; }
+    .grid.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+    label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    input, button, select { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--card); color: var(--text); }
+    input::placeholder { color: #6d8096; }
+    button { cursor: pointer; background: var(--btn); transition: background .2s ease, transform .04s ease; }
+    button:hover { background: var(--btn-h); }
+    button:active { transform: translateY(1px); }
+    /* Disabled buttons appear greyed and ignore hover */
+    button:disabled {
+      opacity: 0.55;
+      filter: grayscale(1);
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+    .btn-ok:disabled, .btn-warn:disabled, .btn-primary:disabled, .btn-ghost:disabled {
+      background: #1a2230;
+      border-color: var(--border);
+      color: #8aa0b6;
+    }
+    .btn-row { display: flex; gap: 8px; align-items: center; }
+    .btn-primary { background: linear-gradient(0deg, #2a7bd1, #2e8fe1); border: none; }
+    .btn-primary:hover { filter: brightness(1.05); }
+    .btn-ok { background: #1e3a2a; border: 1px solid #245b3a; }
+    .btn-warn { background: #3a2f1e; border: 1px solid #5b4a24; }
+    .btn-ghost { background: transparent; border: 1px dashed var(--border); }
+    .btn-icon { width: 32px; height: 32px; padding: 0; display: inline-flex; align-items: center; justify-content: center; font-size: 16px; }
+    .btn-icon:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+    .muted { color: var(--muted); }
+    .pill { font-size: 11px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--border); background: #0d1520; }
+    .pill.ok { border-color: #2f9e67; color: #8ef0c3; }
+    .pill.err { border-color: #a33; color: #ff9c9c; }
+    .pill.warn { border-color: #9a7f25; color: #ffe38a; }
+
+    .cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 12px; display: grid; gap: 10px; }
+    .card h3 { margin: 0; font-size: 16px; }
+    .card-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .kv { display: grid; grid-template-columns: 88px 1fr; gap: 6px 12px; font-size: 13px; }
+    .indicators { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+    .indicator-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; display: grid; gap: 4px; }
+    .indicator-title { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+    .indicator-value { font-size: 14px; font-weight: 600; }
+    .indicator-meta { font-size: 11px; color: var(--muted); }
+    .realtime { border-top: 1px solid var(--border); padding-top: 10px; display: grid; gap: 10px; }
+    .realtime-keys { display: flex; flex-wrap: wrap; gap: 6px 10px; max-height: 120px; overflow-y: auto; }
+    .realtime-keys label { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px; border: 1px solid transparent; background: #0d1520; font-size: 12px; }
+    .realtime-keys input { width: auto; }
+    .realtime-legend { display: flex; flex-wrap: wrap; gap: 8px 14px; font-size: 12px; }
+    .realtime-legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .realtime-legend .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    canvas.realtime-chart { width: 100%; height: 220px; background: #0d1520; border: 1px solid var(--border); border-radius: 10px; }
+    .sep { height: 1px; background: var(--border); margin: 2px 0; }
+
+    #log { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: #0b1017; border-radius: 10px; border: 1px solid var(--border); padding: 10px; color: #98b2cc; max-height: 240px; overflow: auto; }
+    .inline { display: inline-flex; align-items: center; gap: 8px; }
+    .hint { font-size: 12px; color: var(--muted); }
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.62); display: none; align-items: center; justify-content: center; padding: 40px 16px; z-index: 200; }
+    .modal-overlay.open { display: flex; }
+    .modal-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; width: min(720px, 100%); max-height: calc(100vh - 120px); display: flex; flex-direction: column; box-shadow: 0 14px 32px rgba(0,0,0,0.4); }
+    .modal-header { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .modal-header h4 { margin: 0; font-size: 14px; letter-spacing: .3px; }
+    .modal-content { padding: 12px 16px 18px; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; white-space: pre; }
+  </style>
+  <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" integrity="sha384-mkQ3/7FUtcGyoppY6bz/PORYoGqOl7/aSUMn2ymDOJcapfS6PHqxhRTMh1RR0Q6+" crossorigin="anonymous"></script>
+</head>
+<body>
+  <header>
+    <h1>Phyling – Realtime</h1>
+  </header>
+  <main>
+    <div class="row">
+      <!-- ===== Connexion & Réglages ===== -->
+      <section class="section" id="settings">
+        <h2>Réglages & Connexion</h2>
+        <div class="grid">
+          <div>
+            <label for="apiBase">Adresse API</label>
+            <input id="apiBase" placeholder="https://api.app.phyling.fr" />
+            <div class="hint">Ex: https://api.app.phyling.fr</div>
+          </div>
+        </div>
+        <div class="btn-row" style="margin-top:10px">
+          <button id="saveCfg" class="btn-primary">Enregistrer</button>
+          <span class="muted" id="cfgState">&nbsp;</span>
+        </div>
+
+        <div class="sep"></div>
+
+        <div class="grid">
+          <div>
+            <label for="apiKey">Clé API</label>
+            <input id="apiKey" type="password" placeholder="ApiKey abc123..." autocomplete="off" />
+            <label class="inline" style="margin-top:6px">
+              <input type="checkbox" id="rememberKey" style="width: auto;" />
+              Sauvegarder la clé localement
+            </label>
+            <div class="hint">Voir README pour générer une clé. Le client_id est récupéré via GET /login.</div>
+          </div>
+        </div>
+        <div class="btn-row" style="margin-top:10px">
+          <button id="loginBtn" class="btn-primary">Se connecter</button>
+          <button id="logoutBtn" class="btn-ghost">Se déconnecter</button>
+          <span class="inline">
+            <span class="pill" id="authPill">Invité</span>
+            <span class="hint" id="clientHint"></span>
+          </span>
+        </div>
+
+        <div class="sep"></div>
+
+        <div class="btn-row">
+          <button id="sockConnect" class="btn-primary">Socket: Connect</button>
+          <button id="sockDisconnect" class="btn-ghost">Socket: Disconnect</button>
+          <span class="inline">
+            <span class="pill warn" id="sockPill">Hors-ligne</span>
+            <span class="hint" id="roomHint"></span>
+          </span>
+        </div>
+      </section>
+
+      <!-- ===== Logs ===== -->
+      <section class="section">
+        <h2>Logs</h2>
+        <div id="log"></div>
+      </section>
+    </div>
+
+    <!-- ===== Devices ===== -->
+    <section class="section" style="margin-top:12px">
+      <h2>Devices connectés</h2>
+      <div class="btn-row" style="margin-bottom:8px">
+        <button id="resubBtn">(Re)subscribe</button>
+        <button id="clearBtn">Vider</button>
+        <span class="hint">Room: <code id="roomName">(login requis)</code></span>
+      </div>
+      <div id="devices" class="cards"></div>
+    </section>
+  </main>
+
+  <div id="statusModal" class="modal-overlay" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h4 id="statusModalTitle">Status device</h4>
+        <button id="statusModalClose" class="btn-ghost btn-icon" aria-label="Fermer">×</button>
+      </div>
+      <div id="statusModalContent" class="modal-content"></div>
+    </div>
+  </div>
+
+  <script>
+    // ===================== Helpers =====================
+    const $ = (sel) => document.querySelector(sel);
+    const logBox = $('#log');  // to show logs
+    const statusModal = $('#statusModal');  // to show status dumps
+    const statusModalTitle = $('#statusModalTitle');
+    const statusModalContent = $('#statusModalContent');
+    const statusModalClose = $('#statusModalClose');
+    let statusModalLastActive = null;
+    // =========================================================
+    // Core State & Utilities
+    // =========================================================
+
+    const state = {
+      apiBase: localStorage.getItem('apiBase') || 'https://api.staging.cl.phyling.fr',
+      socket: null,
+      apiKey: localStorage.getItem('apiKey') || '',
+      clientId: null,
+      authorization: localStorage.getItem('authorization') || null,
+      user: JSON.parse(localStorage.getItem('user') || 'null'),
+      rememberApiKey: localStorage.getItem('rememberApiKey') === 'true',
+      subscribedRoom: null,
+      devicesRaw: [],
+      devices: [],
+      indicatorSubscriptions: new Set(),
+      statusSubscriptions: new Set(),
+      realtimeSubscriptions: new Set(),
+      deviceStore: new Map(),
+    };
+
+    if (state.user && typeof state.user.client_id === 'number') {
+      state.clientId = state.user.client_id;
+    }
+    if (!state.authorization && state.apiKey) {
+      state.authorization = `ApiKey ${state.apiKey}`;
+    }
+
+    // Each section below manipulates `state` but keeps its own helper set.
+
+    // Append a message to the on-page log area (retain last 1000 lines).
+    function println(msg, obj) {
+      const time = new Date().toLocaleTimeString();
+      logBox.textContent += `[${time}] ${msg}` + (obj ? `\n${JSON.stringify(obj, null, 2)}` : '') + "\n";
+      const lines = logBox.textContent.split('\n');
+      if (lines.length > 1001) {
+        logBox.textContent = lines.slice(-1000).join('\n');
+      }
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    // Display the modal containing a JSON status dump.
+    function openStatusModal(title, text) {
+      if (!statusModal || !statusModalTitle || !statusModalContent) {
+        alert(`${title}\n\n${text}`);
+        return;
+      }
+      statusModalLastActive = document.activeElement;
+      statusModalTitle.textContent = title;
+      statusModalContent.textContent = text;
+      statusModalContent.scrollTop = 0;
+      statusModal.classList.add('open');
+      statusModal.setAttribute('aria-hidden', 'false');
+      if (statusModalClose) {
+        statusModalClose.focus();
+      }
+    }
+
+    // Hide the status modal and restore focus.
+    function closeStatusModal() {
+      if (!statusModal) return;
+      statusModal.classList.remove('open');
+      statusModal.setAttribute('aria-hidden', 'true');
+      if (statusModalContent) statusModalContent.textContent = '';
+      if (statusModalLastActive && typeof statusModalLastActive.focus === 'function') {
+        statusModalLastActive.focus();
+      }
+    }
+
+    // =========================================================
+    // API & Session Management
+    // =========================================================
+
+    // Persist auth payload in memory + localStorage.
+    function saveAuth(payload = {}) {
+      const userPayload = payload.user && typeof payload.user === 'object' ? payload.user : null;
+      const rawClientId = payload.clientId ?? payload.client_id ?? userPayload?.client_id ?? state.user?.client_id;
+      const parsedClientId = Number(rawClientId);
+      state.clientId = Number.isFinite(parsedClientId) ? parsedClientId : null;
+      state.apiKey = payload.apiKey || payload.api_key || state.apiKey || '';
+      state.authorization = state.apiKey ? `ApiKey ${state.apiKey}` : null;
+      if (userPayload) {
+        state.user = state.clientId ? { ...userPayload, client_id: state.clientId } : userPayload;
+      } else if (state.clientId) {
+        state.user = Object.assign({}, state.user, { client_id: state.clientId }) || { client_id: state.clientId };
+      } else if (!userPayload) {
+        state.user = null;
+      }
+      if (state.rememberApiKey) {
+        localStorage.setItem('apiKey', state.apiKey || '');
+        localStorage.setItem('authorization', state.authorization || '');
+      } else {
+        localStorage.removeItem('apiKey');
+        localStorage.removeItem('authorization');
+      }
+      localStorage.setItem('user', JSON.stringify(state.user || null));
+      updateAuthUI();
+    }
+
+    // Clear current auth session and cached device data.
+    function clearAuth() {
+      if (!state.rememberApiKey) {
+        localStorage.removeItem('apiKey');
+        localStorage.removeItem('authorization');
+      }
+      localStorage.removeItem('user');
+      localStorage.removeItem('clientId');
+      state.apiKey = '';
+      state.authorization = null;
+      state.user = null;
+      state.clientId = null;
+      clearIndicatorTracking();
+      state.devicesRaw = [];
+      state.devices = [];
+      updateAuthUI();
+    }
+
+    // Update the top bar to reflect the current auth state.
+    function updateAuthUI() {
+      const pill = $('#authPill');
+      const hint = $('#clientHint');
+      const clientId = state.user?.client_id ?? state.clientId;
+      if (state.authorization && clientId != null) {
+        pill.textContent = 'Connecté'; pill.className = 'pill ok';
+        hint.textContent = `client_id=${clientId}`;
+        $('#roomName').textContent = `app/client/${clientId}/device/list_connected`;
+      } else {
+        pill.textContent = 'Invité'; pill.className = 'pill warn';
+        hint.textContent = '';
+        $('#roomName').textContent = '(login requis)';
+      }
+    }
+
+    // Update the socket status pill.
+    function updateSockUI(connected) {
+      const p = $('#sockPill');
+      p.textContent = connected ? 'En ligne' : 'Hors-ligne';
+      p.className = 'pill ' + (connected ? 'ok' : 'warn');
+    }
+
+    // Derive the Socket.IO base URL from the configured API base.
+    function getSocketBaseFromApi() {
+      try {
+        const url = new URL(state.apiBase);
+        const proto = url.protocol === 'http:' ? 'ws:' : 'wss:';
+        return `${proto}//${url.host}`; // same host, default /socket.io
+      } catch (e) {}
+    }
+
+    // Deep merge helper used when applying status/settings payloads.
+    function deepMerge(into, patch) {
+      if (!patch || typeof patch !== 'object') return into;
+      if (!into || typeof into !== 'object' || Array.isArray(into)) into = {};
+      for (const [key, value] of Object.entries(patch)) {
+        if (Array.isArray(value)) {
+          into[key] = value.map(item => (
+            item && typeof item === 'object' ? deepMerge(Array.isArray(item) ? [] : {}, item) : item
+          ));
+        } else if (value && typeof value === 'object') {
+          const base = into[key];
+          into[key] = deepMerge(base && typeof base === 'object' && !Array.isArray(base) ? base : {}, value);
+        } else {
+          into[key] = value;
+        }
+      }
+      return into;
+    }
+
+    // =========================================================
+    // Device Management
+    // =========================================================
+
+    // Shape used to track per-device runtime data.
+    function createDeviceState() {
+      return {
+        indicators: null,
+        indicatorMeta: null,
+        record: { base: 0, startedAt: null },
+        status: {},
+        connected: false,
+        snapshot: null,
+        settingsLoaded: false,
+        settingsLoading: false,
+        realtime: {
+          availableKeys: [],
+          selectedKeys: [],
+          dataByKey: new Map(),
+          lastSent: 0,
+          pending: false,
+          needsResend: false,
+          lastDataAt: 0,
+          keyMeta: new Map(),
+        },
+      };
+    }
+
+    // Fetch a device entry from the in-memory store.
+    function getDeviceEntry(number) {
+      const num = Number(number);
+      if (!Number.isFinite(num)) return null;
+      return state.deviceStore.get(num) || null;
+    }
+
+// =========================================================
+// Realtime Metadata Helpers
+// =========================================================
+
+    // Color palette for realtime graphs.
+    const REALTIME_COLORS = [ "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf", "#aec7e8", "#ffbb78", "#98df8a", "#ff9896", "#c5b0d5", "#c49c94", "#f7b6d2", "#c7c7c7", "#dbdb8d", "#9edae5", ];
+    const REALTIME_WINDOW_SECONDS = 15;
+
+    function pruneSeriesArray(series, referenceSeconds) {
+      if (!Array.isArray(series) || !series.length) return;
+      const fallbackRef = series[series.length - 1]?.t;
+      const ref = Number.isFinite(referenceSeconds) ? referenceSeconds : fallbackRef;
+      if (!Number.isFinite(ref)) return;
+      const cutoff = ref - REALTIME_WINDOW_SECONDS;
+      if (!Number.isFinite(cutoff)) return;
+      let drop = 0;
+      while (drop < series.length) {
+        const point = series[drop];
+        const pointTime = point?.t;
+        if (!Number.isFinite(pointTime)) {
+          drop++;
+          continue;
+        }
+        if (pointTime >= cutoff) break;
+        drop++;
+      }
+      if (drop > 0) {
+        series.splice(0, drop);
+      }
+    }
+
+    function pruneRealtimeSeries(entry, referenceSeconds) {
+      const map = entry?.realtime?.dataByKey;
+      if (!(map instanceof Map)) return;
+      map.forEach((series) => {
+        pruneSeriesArray(series, referenceSeconds);
+      });
+    }
+
+    // Standardize realtime key definitions coming from the backend.
+    function normalizeRealtimeKey(item) {
+      if (typeof item === 'string') {
+        const parts = item.split('.');
+        const module = parts.shift() || item;
+        const signalPath = parts;
+        return {
+          name: item,
+          label: item,
+          module,
+          signal: signalPath.join('.'),
+          path: signalPath,
+          unit: '',
+          precision: undefined,
+        };
+      }
+      if (!item || typeof item !== 'object') return null;
+      const name = item.name || item.label || '';
+      if (!name) return null;
+      const parts = name.split('.');
+      const module = parts.shift() || name;
+      const signalPath = parts;
+      return {
+        name,
+        label: item.label || name,
+        unit: item.unit || '',
+        precision: item.precision,
+        module,
+        signal: signalPath.join('.'),
+        path: signalPath,
+      };
+    }
+
+    // Return the list of realtime key names currently available for a device.
+    function getAvailableRealtimeNames(entry) {
+      if (!entry || !entry.realtime || !Array.isArray(entry.realtime.availableKeys)) return [];
+      return entry.realtime.availableKeys.map((k) => k.name).filter(Boolean);
+    }
+
+    // Merge a status/settings payload into the device store entry.
+    function mergeDeviceStatus(num, patch) {
+      let entry = state.deviceStore.get(num);
+      if (!entry) {
+        entry = createDeviceState();
+        state.deviceStore.set(num, entry);
+      }
+      const prevMode = getRealtimeState(entry);
+      const prevKeysSig = (entry.realtime?.availableKeys || []).map((k) => k.name).join('||');
+      entry.status = deepMerge(entry.status, patch || {});
+      let keysChanged = false;
+      if (patch && Array.isArray(patch.realtime_data_keys)) {
+        const normalizedKeys = patch.realtime_data_keys
+          .map(normalizeRealtimeKey)
+          .filter((k) => k && k.name);
+        const newSig = normalizedKeys.map((k) => k.name).join('||');
+        keysChanged = prevKeysSig !== newSig;
+        entry.realtime.availableKeys = normalizedKeys;
+        entry.realtime.keyMeta = new Map(normalizedKeys.map((k) => [k.name, k]));
+        const current = entry.realtime.selectedKeys || [];
+        setRealtimeSelection(num, current, { force: true });
+      }
+      syncRealtimeState(num);
+      const nextMode = getRealtimeState(entry);
+      if ((prevMode !== nextMode) || keysChanged) {
+        if (state.devices && state.devices.length) {
+          renderDevices(state.devices);
+        }
+      }
+    }
+
+    // Ensure realtime subscriptions reflect the latest device mode.
+    function syncRealtimeState(num) {
+      const entry = state.deviceStore.get(num);
+      if (!entry || !entry.realtime) return;
+      const active = isRealtimeActive(entry);
+      if (!active) {
+        unsubscribeRealtimeStream(num);
+        entry.realtime.pending = false;
+        entry.realtime.needsResend = false;
+        entry.realtime.lastSent = 0;
+        entry.realtime.dataByKey?.clear?.();
+        updateRealtimeCharts();
+      } else if ((entry.realtime.selectedKeys || []).length) {
+        subscribeRealtimeStream(num);
+        sendRealtimeSelection(num);
+      }
+    }
+
+    // Subscribe to realtime stream updates for the given device.
+    function subscribeRealtimeStream(number) {
+      const num = Number(number);
+      if (!Number.isFinite(num)) return;
+      const entry = state.deviceStore.get(num);
+      if (!isRealtimeActive(entry)) return;
+      if (state.realtimeSubscriptions.has(num)) return;
+      state.realtimeSubscriptions.add(num);
+      if (state.socket && state.socket.connected && state.authorization) {
+        const room = `app/device/${num}/data/json/all`;
+        println('socket.emit("subscribe")', { room });
+        state.socket.emit('subscribe', { authorization: state.authorization, room });
+      }
+    }
+
+    // Stop listening to realtime data for the given device.
+    function unsubscribeRealtimeStream(number) {
+      const num = Number(number);
+      if (!Number.isFinite(num)) return;
+      if (!state.realtimeSubscriptions.has(num)) return;
+      state.realtimeSubscriptions.delete(num);
+      if (state.socket && state.socket.connected) {
+        const room = `app/device/${num}/data/json/all`;
+        println('socket.emit("unsubscribe")', { room });
+        state.socket.emit('unsubscribe', { room });
+      }
+    }
+
+    // Send the realtime key selection to the backend.
+    async function sendRealtimeSelection(num) {
+      if (!state.user || state.user.client_id == null) return;
+      const entry = state.deviceStore.get(num);
+      if (!entry || !entry.realtime) return;
+      if (!isRealtimeActive(entry)) {
+        entry.realtime.lastSent = 0;
+        entry.realtime.pending = false;
+        entry.realtime.needsResend = false;
+        return;
+      }
+      if (entry.realtime.pending) {
+        entry.realtime.needsResend = true;
+        return;
+      }
+      const keys = (entry.realtime.selectedKeys || []).slice();
+      entry.realtime.pending = true;
+      entry.realtime.needsResend = false;
+      try {
+        await apiFetch(`devices/rt/${state.user.client_id}/${num}/realtime`, {
+          method: 'POST',
+          body: JSON.stringify({ realtime_data_keys: keys }),
+        });
+        entry.realtime.lastSent = Date.now();
+      } catch (e) {
+        println(`Realtime keys ERR device ${num}: ${e.message}`);
+      } finally {
+        entry.realtime.pending = false;
+        if (entry.realtime.needsResend) {
+          entry.realtime.needsResend = false;
+          sendRealtimeSelection(num);
+        }
+      }
+    }
+
+    // Update the selected realtime keys and notify the backend if needed.
+    function setRealtimeSelection(num, keys, opts = {}) {
+      const entry = state.deviceStore.get(num);
+      if (!entry || !entry.realtime) return;
+      const availableNames = new Set(getAvailableRealtimeNames(entry));
+      const cleaned = (Array.isArray(keys) ? keys : [])
+        .map((k) => String(k))
+        .filter((k) => availableNames.has(k));
+      const prev = entry.realtime.selectedKeys || [];
+      const sameLength = cleaned.length === prev.length;
+      const sameContent = sameLength && cleaned.every((k) => prev.includes(k));
+      const changed = opts.force || !sameContent;
+      if (!changed) return;
+      entry.realtime.selectedKeys = cleaned;
+      if (!entry.realtime.dataByKey) entry.realtime.dataByKey = new Map();
+      entry.realtime.dataByKey.forEach((_, key) => {
+        if (!cleaned.includes(key)) {
+          entry.realtime.dataByKey.delete(key);
+        }
+      });
+      const active = isRealtimeActive(entry);
+      if (!active || !cleaned.length) {
+        sendRealtimeSelection(num); // send empty list to backend
+        unsubscribeRealtimeStream(num);
+        entry.realtime.lastSent = 0;
+        entry.realtime.dataByKey?.clear?.();
+        entry.realtime.pending = false;
+        entry.realtime.needsResend = false;
+        updateRealtimeCharts();
+        return;
+      }
+      subscribeRealtimeStream(num);
+      entry.realtime.lastSent = 0;
+      sendRealtimeSelection(num);
+      updateRealtimeCharts();
+    }
+
+    // Resend realtime key selections periodically to keep streams alive.
+    function tickRealtimeKeepalive() {
+      const now = Date.now();
+      for (const [num, entry] of state.deviceStore.entries()) {
+        if (!entry?.realtime) continue;
+        const selected = entry.realtime.selectedKeys || [];
+        if (!selected.length) continue;
+        if (!isRealtimeActive(entry)) {
+          unsubscribeRealtimeStream(num);
+          continue;
+        }
+        if (!state.realtimeSubscriptions.has(num)) {
+          subscribeRealtimeStream(num);
+        }
+        if (!entry.realtime.pending && (!entry.realtime.lastSent || (now - entry.realtime.lastSent) > 30000)) {
+          sendRealtimeSelection(num);
+        }
+      }
+    }
+
+    // Redraw every visible realtime chart canvas.
+    function updateRealtimeCharts() {
+      document.querySelectorAll('canvas[data-device-chart]').forEach((canvas) => {
+        const num = Number(canvas.dataset.deviceChart);
+        if (!Number.isFinite(num)) return;
+        const entry = getDeviceEntry(num);
+        pruneRealtimeSeries(entry);
+        drawRealtimeChart(entry, canvas);
+      });
+    }
+
+    // Render realtime history for a device onto its canvas.
+    function drawRealtimeChart(entry, canvas) {
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      const width = canvas.clientWidth || canvas.width;
+      const height = canvas.clientHeight || canvas.height;
+      if (!width || !height) return;
+      const dpr = window.devicePixelRatio || 1;
+      if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
+        canvas.width = Math.round(width * dpr);
+        canvas.height = Math.round(height * dpr);
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+
+      ctx.fillStyle = '#0d1520';
+      ctx.fillRect(0, 0, width, height);
+
+      if (!entry || !entry.realtime) {
+        ctx.fillStyle = '#6d8096';
+        ctx.font = '12px ui-monospace';
+        ctx.fillText('Données indisponibles.', 12, height / 2);
+        return;
+      }
+
+      if (!isRealtimeActive(entry)) {
+        ctx.fillStyle = '#6d8096';
+        ctx.font = '12px ui-monospace';
+        ctx.fillText('Disponible en enregistrement ou scénario.', 12, height / 2);
+        return;
+      }
+
+      const keys = entry.realtime.selectedKeys || [];
+      if (!keys.length) {
+        ctx.fillStyle = '#6d8096';
+        ctx.font = '12px ui-monospace';
+        ctx.fillText('Sélectionnez une clé pour afficher le graphe.', 12, height / 2);
+        return;
+      }
+
+      const series = keys.map((key) => ({
+        key,
+        points: entry.realtime.dataByKey?.get(key) || [],
+      }));
+      const hasData = series.some((s) => s.points && s.points.length);
+      if (!hasData) {
+        ctx.fillStyle = '#6d8096';
+        ctx.font = '12px ui-monospace';
+        ctx.fillText('En attente de données…', 12, height / 2);
+        return;
+      }
+
+      let maxTime = -Infinity;
+      let minTime = Infinity;
+      let minVal = Infinity;
+      let maxVal = -Infinity;
+      series.forEach(({ points }) => {
+        points.forEach(({ t, v }) => {
+          if (!Number.isFinite(t) || !Number.isFinite(v)) return;
+          if (t > maxTime) maxTime = t;
+          if (t < minTime) minTime = t;
+          if (v > maxVal) maxVal = v;
+          if (v < minVal) minVal = v;
+        });
+      });
+      if (!Number.isFinite(maxTime) || !Number.isFinite(minTime)) {
+        ctx.fillStyle = '#6d8096';
+        ctx.font = '12px ui-monospace';
+        ctx.fillText('Données insuffisantes.', 12, height / 2);
+        return;
+      }
+      const windowStart = Math.max(0, maxTime - 10);
+      const spanTime = Math.max(1, maxTime - windowStart);
+      const paddingX = 28;
+      const paddingY = 18;
+      const chartW = width - paddingX * 2;
+      const chartH = height - paddingY * 2;
+
+      if (!Number.isFinite(minVal) || !Number.isFinite(maxVal)) {
+        minVal = -1;
+        maxVal = 1;
+      }
+      if (maxVal === minVal) {
+        maxVal += 0.5;
+        minVal -= 0.5;
+      }
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(paddingX, paddingY);
+      ctx.lineTo(paddingX, paddingY + chartH);
+      ctx.lineTo(paddingX + chartW, paddingY + chartH);
+      ctx.stroke();
+
+      const gridCount = 4;
+      ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+      for (let i = 1; i <= gridCount; i++) {
+        const y = paddingY + (chartH / gridCount) * i;
+        ctx.beginPath();
+        ctx.moveTo(paddingX, y);
+        ctx.lineTo(paddingX + chartW, y);
+        ctx.stroke();
+      }
+
+      series.forEach(({ key, points }) => {
+        if (!points.length) return;
+        const colorIdx = keys.indexOf(key) % REALTIME_COLORS.length;
+        const color = REALTIME_COLORS[colorIdx];
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        points.forEach(({ t, v }, idx) => {
+          const clampedT = Math.max(windowStart, Math.min(maxTime, t));
+          const x = paddingX + ((clampedT - windowStart) / spanTime) * chartW;
+          const y = paddingY + (1 - (v - minVal) / (maxVal - minVal)) * chartH;
+          if (idx === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+      });
+
+      ctx.fillStyle = '#6d8096';
+      ctx.font = '11px ui-monospace';
+      ctx.fillText(`${windowStart.toFixed(1)}s`, paddingX, paddingY + chartH + 14);
+      ctx.textAlign = 'right';
+      ctx.fillText(`${maxTime.toFixed(1)}s`, paddingX + chartW, paddingY + chartH + 14);
+      ctx.textAlign = 'left';
+      ctx.fillText(maxVal.toFixed(3), paddingX + 4, paddingY + 10);
+      ctx.fillText(minVal.toFixed(3), paddingX + 4, paddingY + chartH - 4);
+    }
+
+    // =========================================================
+    // Indicator & Record Helpers
+    // =========================================================
+
+    // Open the status modal for a specific device.
+    function showDeviceStatus(number) {
+      const num = Number(number);
+      if (!Number.isFinite(num)) {
+        openStatusModal('Status device', 'Aucun status disponible.');
+        return;
+      }
+      const entry = state.deviceStore.get(num) || null;
+      const status = entry?.status || {};
+      const hasContent = status && typeof status === 'object' && Object.keys(status).length > 0;
+      const title = `Status device ${num}`;
+      const json = hasContent ? JSON.stringify(status, null, 2) : 'Aucun status disponible.';
+      openStatusModal(title, json);
+    }
+
+    // Update the in-memory recording timer for a device.
+    function updateRecordClock(entry, recTime) {
+      if (!entry || !entry.record) return;
+      if (typeof recTime !== 'number' || Number.isNaN(recTime)) return;
+      if (recTime > 0) {
+        entry.record.base = recTime;
+        entry.record.startedAt = Date.now();
+      } else {
+        entry.record.base = recTime;
+        entry.record.startedAt = null;
+      }
+    }
+
+    // Compute the number of seconds the device has been recording.
+    function computeRecordSeconds(entry) {
+      if (!entry || !entry.record) return 0;
+      const base = entry.record.base || 0;
+      if (entry.record.startedAt) {
+        const delta = (Date.now() - entry.record.startedAt) / 1000;
+        return base + Math.max(0, delta);
+      }
+      return base;
+    }
+
+    // Return a lightweight indicator snapshot for rendering.
+    function getIndicatorSnapshot(number) {
+      const entry = state.deviceStore.get(number) || null;
+      if (!entry) return null;
+      return {
+        indicators: entry.indicators,
+        receivedAt: entry.indicatorMeta?.receivedAt || null,
+        recordSeconds: computeRecordSeconds(entry),
+      };
+    }
+
+    // Map device state to a simple realtime mode flag.
+    function getRealtimeState(entry) {
+      if (!entry) return null;
+      const source = entry.status?.state ?? entry.snapshot?.state ?? '';
+      const stateStr = String(source).toLowerCase();
+      return stateStr === 'record' || stateStr === 'scenario' ? stateStr : null;
+    }
+
+    // True if the device is currently in a realtime-capable mode.
+    function isRealtimeActive(entry) {
+      return !!getRealtimeState(entry);
+    }
+
+    // Unsubscribe from every device stream and clear cached state.
+    function clearIndicatorTracking() {
+      if (state.socket) {
+        for (const number of state.indicatorSubscriptions) {
+          const num = Number(number);
+          if (!Number.isFinite(num)) continue;
+          const room = `app/device/${num}/ind/json/all`;
+          println('socket.emit("unsubscribe")', { room });
+          state.socket.emit('unsubscribe', { room });
+        }
+        for (const number of state.statusSubscriptions) {
+          const num = Number(number);
+          if (!Number.isFinite(num)) continue;
+          const room = `app/device/${num}/board/status`;
+          println('socket.emit("unsubscribe")', { room });
+          state.socket.emit('unsubscribe', { room });
+        }
+        for (const number of state.realtimeSubscriptions) {
+          const num = Number(number);
+          if (!Number.isFinite(num)) continue;
+          const room = `app/device/${num}/data/json/all`;
+          println('socket.emit("unsubscribe")', { room });
+          state.socket.emit('unsubscribe', { room });
+        }
+      }
+      state.indicatorSubscriptions.clear();
+      state.statusSubscriptions.clear();
+      state.realtimeSubscriptions.clear();
+      state.deviceStore.clear();
+    }
+
+    // Called when the backend reports that a device just connected.
+    function onDeviceConnect(number) {
+      const num = Number(number);
+      if (!Number.isFinite(num)) return;
+      let entry = state.deviceStore.get(num);
+      if (!entry) {
+        entry = createDeviceState();
+        state.deviceStore.set(num, entry);
+      }
+      entry.connected = true;
+
+      if (!state.indicatorSubscriptions.has(num)) {
+        state.indicatorSubscriptions.add(num);
+        if (state.socket && state.socket.connected && state.authorization) {
+          const room = `app/device/${num}/ind/json/all`;
+          println('socket.emit("subscribe")', { room });
+          state.socket.emit('subscribe', { authorization: state.authorization, room });
+        }
+      }
+
+      if (!state.statusSubscriptions.has(num)) {
+        state.statusSubscriptions.add(num);
+        if (state.socket && state.socket.connected && state.authorization) {
+          const room = `app/device/${num}/board/status`;
+          println('socket.emit("subscribe")', { room });
+          state.socket.emit('subscribe', { authorization: state.authorization, room });
+        }
+      }
+
+      if (entry && !entry.settingsLoaded && !entry.settingsLoading) {
+        fetchDeviceSettings(num);
+      }
+
+      syncRealtimeState(num);
+    }
+
+    // Called when the backend reports that a device just disconnected.
+    function onDeviceDisconnect(number) {
+      const num = Number(number);
+      if (!Number.isFinite(num)) return;
+      const entry = state.deviceStore.get(num) || null;
+      if (entry) {
+        entry.connected = false;
+        updateRecordClock(entry, 0);
+        entry.settingsLoaded = false;
+        entry.settingsLoading = false;
+      }
+
+      if (state.indicatorSubscriptions.has(num)) {
+        state.indicatorSubscriptions.delete(num);
+        if (state.socket && state.socket.connected) {
+          const room = `app/device/${num}/ind/json/all`;
+          println('socket.emit("unsubscribe")', { room });
+          state.socket.emit('unsubscribe', { room });
+        }
+      }
+
+      if (state.statusSubscriptions.has(num)) {
+        state.statusSubscriptions.delete(num);
+        if (state.socket && state.socket.connected) {
+          const room = `app/device/${num}/board/status`;
+          println('socket.emit("unsubscribe")', { room });
+          state.socket.emit('unsubscribe', { room });
+        }
+      }
+
+      if (state.realtimeSubscriptions.has(num)) {
+        state.realtimeSubscriptions.delete(num);
+        if (state.socket && state.socket.connected) {
+          const room = `app/device/${num}/data/json/all`;
+          println('socket.emit("unsubscribe")', { room });
+          state.socket.emit('unsubscribe', { room });
+        }
+      }
+
+      if (entry?.realtime) {
+        entry.realtime.dataByKey?.clear?.();
+        entry.realtime.pending = false;
+        entry.realtime.needsResend = false;
+      }
+      updateRealtimeCharts();
+    }
+
+    // Fetch and merge device settings from the REST API.
+    async function fetchDeviceSettings(number) {
+      const num = Number(number);
+      if (!Number.isFinite(num)) return;
+      if (!state.user || state.user.client_id == null) return;
+      let entry = state.deviceStore.get(num);
+      if (!entry) {
+        entry = createDeviceState();
+        state.deviceStore.set(num, entry);
+      }
+      if (entry.settingsLoading) return;
+      entry.settingsLoading = true;
+      try {
+        const data = await apiFetch(`devices/rt/${state.user.client_id}/${num}/settings`);
+        mergeDeviceStatus(num, data || {});
+        entry.settingsLoaded = true;
+      } catch (e) {
+        println(`Settings ERR device ${num}: ${e.message}`);
+      } finally {
+        entry.settingsLoading = false;
+      }
+    }
+
+    // Re-subscribe to every active device stream after reconnect.
+    function resubscribeDeviceStreams() {
+      if (!state.socket || !state.socket.connected || !state.authorization) return;
+      for (const number of state.indicatorSubscriptions) {
+        const num = Number(number);
+        if (!Number.isFinite(num)) continue;
+        const room = `app/device/${num}/ind/json/all`;
+        println('socket.emit("subscribe")', { room });
+        state.socket.emit('subscribe', { authorization: state.authorization, room });
+      }
+      for (const number of state.statusSubscriptions) {
+        const num = Number(number);
+        if (!Number.isFinite(num)) continue;
+        const room = `app/device/${num}/board/status`;
+        println('socket.emit("subscribe")', { room });
+        state.socket.emit('subscribe', { authorization: state.authorization, room });
+      }
+      for (const number of state.realtimeSubscriptions) {
+        const entry = state.deviceStore.get(number) || null;
+        if (!isRealtimeActive(entry)) {
+          unsubscribeRealtimeStream(number);
+          continue;
+        }
+        const num = Number(number);
+        if (!Number.isFinite(num)) continue;
+        const room = `app/device/${num}/data/json/all`;
+        println('socket.emit("subscribe")', { room });
+        state.socket.emit('subscribe', { authorization: state.authorization, room });
+        if (entry?.realtime?.selectedKeys?.length) {
+          sendRealtimeSelection(number);
+        }
+      }
+    }
+
+    // Store the latest indicator snapshot for a device.
+    function rememberIndicatorPayload(payload) {
+      if (!payload || typeof payload !== 'object') return false;
+      const num = Number(payload.number);
+      if (!Number.isFinite(num)) return false;
+      let entry = state.deviceStore.get(num);
+      if (!entry) {
+        entry = createDeviceState();
+        state.deviceStore.set(num, entry);
+      }
+      updateRecordClock(entry, payload.recTime);
+      if (!payload.indicators || typeof payload.indicators !== 'object') {
+        return false;
+      }
+      entry.indicators = payload.indicators || {};
+      entry.indicatorMeta = {
+        receivedAt: Date.now(),
+        raw: payload,
+      };
+      updateRecordClock(entry, payload.recTime);
+      return true;
+    }
+
+    // Convenience helper used by the renderer.
+    function getIndicatorDataForDevice(device) {
+      if (!device || !Number.isFinite(device.number)) return null;
+      return getIndicatorSnapshot(device.number);
+    }
+
+    // Process a socket payload containing board/status updates.
+    function handleDeviceStatusPayload(payload) {
+      if (!payload || typeof payload !== 'object') return;
+      const rawNumber = payload.number ?? payload.device_number ?? payload.device ?? payload.id;
+      const num = Number(rawNumber);
+      if (!Number.isFinite(num)) return;
+      mergeDeviceStatus(num, payload);
+    }
+
+    // Process a socket payload containing realtime sensor values.
+    function handleRealtimeDataPayload(payload) {
+      if (!payload || typeof payload !== 'object') return;
+      const num = Number(payload.number);
+      if (!Number.isFinite(num)) return;
+      let entry = state.deviceStore.get(num);
+      if (!entry) {
+        entry = createDeviceState();
+        state.deviceStore.set(num, entry);
+      }
+      if (!entry.realtime) return;
+      if (!isRealtimeActive(entry)) return;
+      updateRecordClock(entry, payload.recTime);
+      const selected = entry.realtime.selectedKeys || [];
+      if (!selected.length) return;
+      const data = payload.data;
+      if (!data || typeof data !== 'object') return;
+      const metaMap = entry.realtime.keyMeta instanceof Map ? entry.realtime.keyMeta : new Map();
+      const selectedByModule = new Map();
+      selected.forEach((name) => {
+        const meta = metaMap.get(name) || normalizeRealtimeKey(name);
+        if (!meta || !meta.module) return;
+        if (!selectedByModule.has(meta.module)) selectedByModule.set(meta.module, []);
+        selectedByModule.get(meta.module).push(meta);
+      });
+      if (!selectedByModule.size) return;
+
+      let globalMaxTime = Number.isFinite(payload.recTime) ? payload.recTime : null;
+
+      const getValueAtPath = (obj, path) => {
+        let current = obj;
+        for (const segment of path) {
+          if (!current || typeof current !== 'object') return undefined;
+          current = current[segment];
+        }
+        return current;
+      };
+
+      for (const [moduleName, moduleBlock] of Object.entries(data)) {
+        if (!moduleBlock || typeof moduleBlock !== 'object') continue;
+        const metas = selectedByModule.get(moduleName);
+        if (!metas || !metas.length) continue;
+        const times = Array.isArray(moduleBlock.T)
+          ? moduleBlock.T
+          : (Array.isArray(moduleBlock.t) ? moduleBlock.t : null);
+
+        metas.forEach((meta) => {
+          const values = Array.isArray(meta.path) && meta.path.length
+            ? getValueAtPath(moduleBlock, meta.path)
+            : moduleBlock[meta.signal] ?? moduleBlock[meta.name] ?? moduleBlock;
+
+          if (!Array.isArray(values) || !values.length) return;
+          let series = entry.realtime.dataByKey.get(meta.name);
+          if (!series) {
+            series = [];
+            entry.realtime.dataByKey.set(meta.name, series);
+          }
+          for (let i = 0; i < values.length; i++) {
+            const val = Number(values[i]);
+            if (!Number.isFinite(val)) continue;
+            let t = null;
+            if (times && times[i] !== undefined && times[i] !== null) {
+              t = Number(times[i]);
+            } else if (globalMaxTime !== null) {
+              const dt = (values.length - 1 - i) * 0.02;
+              t = globalMaxTime - dt;
+            } else {
+              t = Date.now() / 1000;
+            }
+            if (globalMaxTime === null || t > globalMaxTime) {
+              globalMaxTime = t;
+            }
+            series.push({ t, v: val });
+          }
+          pruneSeriesArray(series, globalMaxTime);
+        });
+      }
+      pruneRealtimeSeries(entry, globalMaxTime);
+      entry.realtime.lastDataAt = Date.now();
+      updateRealtimeCharts();
+      updateRecordTimers();
+    }
+
+    // Format raw indicator values for display.
+    function formatIndicatorValue(value) {
+      if (typeof value === 'number') {
+        const abs = Math.abs(value);
+        if (abs >= 1000 || (abs > 0 && abs < 0.001)) {
+          return value.toExponential(2);
+        }
+        if (abs >= 100) return value.toFixed(0);
+        if (abs >= 10) return value.toFixed(1);
+        return value.toFixed(3);
+      }
+      return String(value);
+    }
+
+    // Helper used to render human readable record durations.
+    function formatDuration(seconds) {
+      if (!Number.isFinite(seconds)) return '0s';
+      const total = Math.max(0, seconds);
+      if (total < 120) {
+        return `${total.toFixed(1)}s`;
+      }
+      const totalInt = Math.floor(total);
+      const hrs = Math.floor(totalInt / 3600);
+      const mins = Math.floor((totalInt % 3600) / 60);
+      const secs = totalInt % 60;
+      const base = hrs > 0
+        ? `${hrs}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+        : `${mins}:${String(secs).padStart(2, '0')}`;
+      return `${base}s`;
+    }
+
+    // Compose the text displayed under the indicator cards.
+    function composeRecordMeta(number) {
+      const snapshot = getIndicatorSnapshot(number);
+      if (!snapshot) return '';
+      const parts = [];
+      if (Number.isFinite(snapshot.recordSeconds) && snapshot.recordSeconds > 0) {
+        parts.push(`rec ${formatDuration(snapshot.recordSeconds)}`);
+      }
+      if (snapshot.receivedAt) {
+        parts.push(`maj ${new Date(snapshot.receivedAt).toLocaleTimeString()}`);
+      }
+      return parts.join(' · ');
+    }
+
+    // Mutate a DOM node so it shows up-to-date record metadata.
+    function updateRecordMetaElement(element, number) {
+      if (!element || !element.dataset) return;
+      const meta = composeRecordMeta(number);
+      if (meta) {
+        element.textContent = meta;
+        element.style.display = '';
+      } else {
+        element.textContent = '';
+        element.style.display = 'none';
+      }
+    }
+
+    // Tick every record metadata node so timers stay fresh.
+    function updateRecordTimers() {
+      const nodes = document.querySelectorAll('[data-device-record]');
+      nodes.forEach((el) => {
+        const num = Number(el.dataset.deviceRecord);
+        if (!Number.isFinite(num)) return;
+        updateRecordMetaElement(el, num);
+      });
+    }
+
+    // ============== API ==============
+    // Lightweight wrapper around `fetch` that injects auth headers.
+    async function apiFetch(path, opts = {}) {
+      const url = `${state.apiBase.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
+      const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+      if (state.authorization) headers['Authorization'] = state.authorization;
+      const res = await fetch(url, { ...opts, headers });
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '');
+        throw new Error(`HTTP ${res.status} ${res.statusText}: ${txt}`);
+      }
+      const ct = res.headers.get('content-type') || '';
+      return ct.includes('application/json') ? res.json() : res.text();
+    }
+
+    // Enregistrer la clé API fournie et relancer les souscriptions.
+    async function loginWithApiKey({ apiKey }) {
+      const key = (apiKey || '').trim();
+      if (!key) {
+        throw new Error('Clé API manquante');
+      }
+      const prevKey = state.apiKey;
+      const prevAuth = state.authorization;
+      state.apiKey = key;
+      state.authorization = `ApiKey ${key}`;
+      try {
+        const profile = await apiFetch('/login');
+        saveAuth({ apiKey: key, user: profile });
+        const who = profile?.firstname || profile?.lastname ? `${profile?.firstname || ''} ${profile?.lastname || ''}`.trim() : profile?.mail || 'Utilisateur';
+        const clientInfo = profile?.client_id != null ? ` (client_id=${profile.client_id})` : '';
+        println(`Authentifié via clé API: ${who}${clientInfo}`);
+        if (state.socket && state.socket.connected) {
+          await subscribeToDevices();
+        }
+      } catch (err) {
+        state.apiKey = prevKey;
+        state.authorization = prevAuth;
+        throw err;
+      }
+    }
+
+    // Send a control RPC to a device via the REST API.
+    async function rpcRequest(deviceId, payload) {
+      // payload = {
+      //   feature: 'record',
+      //   cmd_type: 'cmd_start',
+      //   params: {},
+      //   timeout: -1,
+      //   wait_for_result: true,
+      // };
+      if (!state.user || state.user.client_id == null) throw new Error('Non connecté');
+      const clientId = state.user.client_id;
+      const path = `devices/rt/${clientId}/${deviceId}/rpc/request`;
+      println(`RPC → ${deviceId} `, payload);
+      return apiFetch(path, { method: 'POST', body: JSON.stringify(payload) });
+    }
+
+    // ============== Socket.IO ==============
+    // Boot the Socket.IO client and register event handlers.
+    function connectSocket() {
+      if (state.socket) {
+        try { state.socket.disconnect(); } catch {}
+        state.socket = null;
+      }
+      const base = getSocketBaseFromApi();
+      if (!base) { println('Socket base introuvable – configurez-le.'); return; }
+      println(`Socket connect → ${base}`);
+      const socket = io(base, { transports: ['websocket'] });
+      state.socket = socket;
+
+      socket.on('connect', () => { updateSockUI(true); println('Socket connecté'); });
+      socket.on('disconnect', (reason) => { updateSockUI(false); println('Socket déconnecté: ' + reason); });
+      socket.on('connect_error', (err) => { updateSockUI(false); println('Socket connect_error', { message: err.message }); });
+      socket.on('app/client/device/list_connected', (payload) => {
+        handleDeviceList(payload);
+      });
+      socket.on('app/device/data/json/all', (payload) => {
+        const updatedIndicators = rememberIndicatorPayload(payload);
+        handleRealtimeDataPayload(payload);
+        if (updatedIndicators && state.devices && state.devices.length) {
+          renderDevices(state.devices);
+        }
+      });
+      socket.on('app/device/board/status', (payload) => {
+        handleDeviceStatusPayload(payload);
+      });
+
+      // Catch-all to inspect incoming events – we'll pick device lists from here
+      socket.onAny((event, ...args) => {
+        const payload = args[0];
+        println(`⟵ event: ${event}`, payload);
+      });
+
+      // Auto-(re)subscribe si déjà connecté & on a un client
+      socket.on('connect', async () => {
+        resubscribeDeviceStreams();
+        if (state.user?.client_id != null && state.authorization) {
+          await subscribeToDevices();
+        }
+      });
+    }
+
+    // Subscribe to the per-client device list room.
+    async function subscribeToDevices() {
+      if (!state.socket) { println('Socket non connecté'); return; }
+      if (!state.user || state.user.client_id == null || !state.authorization) { println('Login requis pour subscribe'); return; }
+
+      const room = `app/client/${state.user.client_id}/device/list_connected`;
+      $('#roomName').textContent = room;
+      state.subscribedRoom = room;
+      println('socket.emit("subscribe")', { room });
+      state.socket.emit('subscribe', { authorization: state.authorization, room });
+    }
+
+    // Unsubscribe from the device list room and clear caches.
+    function unsubscribe() {
+      if (state.socket && state.subscribedRoom) {
+        println('socket.emit("unsubscribe")', { room: state.subscribedRoom });
+        state.socket.emit('unsubscribe', { room: state.subscribedRoom });
+        state.subscribedRoom = null;
+      }
+      clearIndicatorTracking();
+    }
+
+    // ============== UI: devices ==============
+    const devicesEl = $('#devices');
+
+    // =========================================================
+    // Device Rendering
+    // =========================================================
+
+    // Render the device cards list.
+    function renderDevices(devices) {
+      devicesEl.innerHTML = '';
+      if (!devices || !devices.length) {
+        devicesEl.innerHTML = '<div class="muted">Aucun device connecté.</div>';
+        return;
+      }
+      for (const d of devices) {
+        const card = document.createElement('div');
+        card.className = 'card';
+        const entry = state.deviceStore.get(d.number) || null;
+        const header = document.createElement('div');
+        header.className = 'card-header';
+        const title = document.createElement('h3');
+        title.textContent = d.name;
+        header.appendChild(title);
+        if (entry) {
+          const statusBtn = document.createElement('button');
+          statusBtn.className = 'btn-icon btn-ghost';
+          statusBtn.title = 'Voir le status';
+          statusBtn.textContent = '{}';
+          statusBtn.addEventListener('click', () => {
+            showDeviceStatus(d.number);
+          });
+          header.appendChild(statusBtn);
+        }
+        card.appendChild(header);
+
+        const kv = document.createElement('div');
+        kv.className = 'kv';
+        const numberLabel = d.number;
+        // Batterie: -1 signifie désactivée, sinon pourcentage 0-100.
+        const batteryVal = entry?.status?.battery + "%";
+        kv.innerHTML = `
+          <div class="muted">Number</div><div>${numberLabel}</div>
+          <div class="muted">Connecté</div><div>${d.is_connected ? 'Oui' : 'Non'}</div>
+          <div class="muted">État</div><div>${d.state || 'inconnu'}</div>
+          <div class="muted">Batterie</div><div>${batteryVal}</div>
+        `;
+        card.appendChild(kv);
+
+        const indic = getIndicatorDataForDevice(d);
+        if (indic && indic.indicators && Object.keys(indic.indicators).length) {
+          const indicatorsWrap = document.createElement('div');
+          indicatorsWrap.className = 'indicators';
+          for (const [name, value] of Object.entries(indic.indicators)) {
+            const indCard = document.createElement('div');
+            indCard.className = 'indicator-card';
+
+            const titleEl = document.createElement('div');
+            titleEl.className = 'indicator-title';
+            titleEl.textContent = name;
+            indCard.appendChild(titleEl);
+
+            if (value && typeof value === 'object' && !Array.isArray(value)) {
+              const highlightKey = 'y' in value ? 'y' : ('value' in value ? 'value' : Object.keys(value)[0]);
+              if (highlightKey) {
+                const highlightVal = value[highlightKey];
+                if (highlightVal !== undefined) {
+                  const main = document.createElement('div');
+                  main.className = 'indicator-value';
+                  main.textContent = formatIndicatorValue(highlightVal);
+                  indCard.appendChild(main);
+                }
+              }
+              const entries = Object.entries(value);
+              if (entries.length) {
+                for (const [k, v] of entries) {
+                  const line = document.createElement('div');
+                  line.className = 'indicator-meta';
+                  line.textContent = `${k}: ${formatIndicatorValue(v)}`;
+                  indCard.appendChild(line);
+                }
+              } else {
+                const empty = document.createElement('div');
+                empty.className = 'indicator-meta';
+                empty.textContent = '—';
+                indCard.appendChild(empty);
+              }
+            } else {
+              const valueEl = document.createElement('div');
+              valueEl.className = 'indicator-value';
+              valueEl.textContent = formatIndicatorValue(value);
+              indCard.appendChild(valueEl);
+            }
+
+            indicatorsWrap.appendChild(indCard);
+          }
+          card.appendChild(indicatorsWrap);
+
+          const metaLine = document.createElement('div');
+          metaLine.className = 'indicator-meta record-meta';
+          metaLine.dataset.deviceRecord = String(d.number);
+          updateRecordMetaElement(metaLine, d.number);
+          if (metaLine.textContent) {
+            card.appendChild(metaLine);
+          } else {
+            metaLine.style.display = 'none';
+            card.appendChild(metaLine);
+          }
+        } else {
+          const noData = document.createElement('div');
+          noData.className = 'indicator-meta';
+          noData.textContent = 'Indicateurs indisponibles';
+          card.appendChild(noData);
+        }
+
+        if (entry?.realtime && isRealtimeActive(entry)) {
+          const availableKeys = entry.realtime.availableKeys || [];
+          if (availableKeys.length) {
+            const realtimeWrap = document.createElement('div');
+            realtimeWrap.className = 'realtime';
+
+            const keysTitle = document.createElement('div');
+            keysTitle.className = 'muted';
+            keysTitle.textContent = 'Realtime data keys';
+            realtimeWrap.appendChild(keysTitle);
+
+            const keysWrap = document.createElement('div');
+            keysWrap.className = 'realtime-keys';
+            availableKeys.forEach((keyObj) => {
+              if (!keyObj || !keyObj.name) return;
+              const labelEl = document.createElement('label');
+              const input = document.createElement('input');
+              input.type = 'checkbox';
+              input.value = keyObj.name;
+              input.checked = entry.realtime.selectedKeys?.includes(keyObj.name) || false;
+              input.addEventListener('change', () => {
+                const selected = Array.from(keysWrap.querySelectorAll('input:checked')).map((el) => el.value);
+                setRealtimeSelection(d.number, selected);
+                updateRealtimeCharts();
+                refreshLegend();
+              });
+              labelEl.appendChild(input);
+              const textNode = document.createElement('span');
+              textNode.textContent = keyObj.label || keyObj.name;
+              labelEl.appendChild(textNode);
+              if (keyObj.unit) {
+                const unitSpan = document.createElement('span');
+                unitSpan.className = 'muted';
+                unitSpan.textContent = ` (${keyObj.unit})`;
+                labelEl.appendChild(unitSpan);
+              }
+              keysWrap.appendChild(labelEl);
+            });
+            realtimeWrap.appendChild(keysWrap);
+
+            const legend = document.createElement('div');
+            legend.className = 'realtime-legend';
+            realtimeWrap.appendChild(legend);
+
+            const refreshLegend = () => {
+              legend.innerHTML = '';
+              const selectedKeys = entry.realtime.selectedKeys || [];
+              if (!selectedKeys.length) {
+                const empty = document.createElement('span');
+                empty.className = 'muted';
+                empty.textContent = 'Aucune clé sélectionnée.';
+                legend.appendChild(empty);
+                return;
+              }
+              selectedKeys.forEach((key, idx) => {
+                const item = document.createElement('span');
+                const dot = document.createElement('span');
+                dot.className = 'dot';
+                dot.style.background = REALTIME_COLORS[idx % REALTIME_COLORS.length];
+                item.appendChild(dot);
+                item.appendChild(document.createTextNode(key));
+                legend.appendChild(item);
+              });
+            };
+
+            const canvas = document.createElement('canvas');
+            canvas.className = 'realtime-chart';
+            canvas.dataset.deviceChart = String(d.number);
+            realtimeWrap.appendChild(canvas);
+            card.appendChild(realtimeWrap);
+            refreshLegend();
+            drawRealtimeChart(entry, canvas);
+          }
+        }
+
+        const btnRow = document.createElement('div');
+        btnRow.className = 'btn-row';
+        const startBtn = document.createElement('button');
+        startBtn.textContent = 'Start record';
+        startBtn.className = 'btn-ok';
+        const stopBtn = document.createElement('button');
+        stopBtn.textContent = 'Stop record';
+        stopBtn.className = 'btn-warn';
+
+        // Logic state → buttons
+        const stateStr = (d.state || '').toLowerCase();
+        if (stateStr === 'idle') {
+          stopBtn.disabled = true;
+        } else if (stateStr === 'record' || stateStr === 'scenario') {
+          startBtn.disabled = true;
+        } else {
+          // autre chose → start non cliquable
+          startBtn.disabled = true;
+          stopBtn.disabled = true;
+        }
+
+        if (entry) {
+          startBtn.addEventListener('click', async () => {
+            try {
+              const res = await rpcRequest(d.number, {
+                feature: 'record',
+                cmd_type: 'cmd_start',
+                params: {},
+                wait_for_result: false,
+              });
+              println('RPC start OK', res);
+            } catch (e) { println('RPC start ERR ' + e.message); }
+          });
+          stopBtn.addEventListener('click', async () => {
+            try {
+              const res = await rpcRequest(d.number, {
+                feature: 'record',
+                cmd_type: 'cmd_stop',
+                params: {},
+                wait_for_result: false,
+              });
+              println('RPC stop OK', res);
+            } catch (e) { println('RPC stop ERR ' + e.message); }
+          });
+        }
+
+        btnRow.appendChild(startBtn);
+        btnRow.appendChild(stopBtn);
+        card.appendChild(btnRow);
+
+        devicesEl.appendChild(card);
+      }
+      updateRecordTimers();
+      updateRealtimeCharts();
+    }
+
+    // Normalize the raw device list coming from the socket.
+    function handleDeviceList(list) {
+      const previousDevices = state.devices || [];
+      const prevConnected = new Set();
+      for (const d of previousDevices) {
+        if (!Number.isFinite(d.number)) continue;
+        if (d.is_connected) prevConnected.add(d.number);
+      }
+
+      state.devicesRaw = Array.isArray(list) ? list : [];
+      const norm = (state.devicesRaw || []).map(d => {
+        const parsedNumber = Number(d.number);
+        const hasNumber = Number.isFinite(parsedNumber);
+        const number = hasNumber ? parsedNumber : null;
+        if (hasNumber) {
+          let entry = state.deviceStore.get(number);
+          if (!entry) {
+            entry = createDeviceState();
+            state.deviceStore.set(number, entry);
+          }
+          entry.snapshot = { ...d };
+          entry.connected = !!d.is_connected;
+        }
+        return {
+          number,
+          name: d.name || (hasNumber ? `Device ${number}` : 'Device'),
+          is_connected: !!d.is_connected,
+          state: d.state || 'idle',
+          original: d,
+        };
+      });
+      state.devices = norm;
+
+      const newConnected = new Set();
+      for (const d of norm) {
+        if (!Number.isFinite(d.number)) continue;
+        if (d.is_connected) newConnected.add(d.number);
+      }
+
+      for (const num of newConnected) {
+        if (!prevConnected.has(num)) {
+          onDeviceConnect(num);
+        }
+      }
+      for (const num of prevConnected) {
+        if (!newConnected.has(num)) {
+          onDeviceDisconnect(num);
+        }
+      }
+
+      renderDevices(norm);
+    }
+
+    // =========================================================
+    // UI Wiring & Startup
+    // =========================================================
+    // Populate the configuration form with persisted values.
+    function loadCfgToUI() {
+      $('#apiBase').value = state.apiBase;
+      $('#rememberKey').checked = !!state.rememberApiKey;
+      $('#apiKey').value = state.rememberApiKey ? (state.apiKey || '') : '';
+      updateAuthUI();
+      updateSockUI(state.socket?.connected || false);
+    }
+
+    $('#saveCfg').addEventListener('click', () => {
+      const api = $('#apiBase').value.trim() || 'https://api.staging.cl.phyling.fr';
+      state.apiBase = api;
+      localStorage.setItem('apiBase', api);
+      $('#cfgState').textContent = 'Enregistré';
+      setTimeout(() => $('#cfgState').textContent = '', 1200);
+    });
+
+    $('#loginBtn').addEventListener('click', async () => {
+      try {
+        const apiKeyInput = $('#apiKey').value.trim();
+        state.rememberApiKey = $('#rememberKey').checked;
+        localStorage.setItem('rememberApiKey', state.rememberApiKey ? 'true' : 'false');
+        await loginWithApiKey({ apiKey: apiKeyInput });
+      } catch (e) { println('Login ERR ' + e.message); }
+    });
+
+    $('#logoutBtn').addEventListener('click', () => {
+      clearAuth(); unsubscribe();
+      renderDevices([]);
+    });
+
+    $('#sockConnect').addEventListener('click', () => connectSocket());
+    $('#sockDisconnect').addEventListener('click', () => { if (state.socket) state.socket.disconnect(); });
+
+    $('#resubBtn').addEventListener('click', () => subscribeToDevices());
+    $('#clearBtn').addEventListener('click', () => { devicesEl.innerHTML = ''; });
+
+    $('#apiKey').addEventListener('input', (e) => {
+      if ($('#rememberKey').checked) {
+        localStorage.setItem('apiKey', e.target.value);
+      }
+    });
+    $('#rememberKey').addEventListener('change', (e) => {
+      const on = !!e.target.checked;
+      state.rememberApiKey = on;
+      localStorage.setItem('rememberApiKey', on ? 'true' : 'false');
+      if (!on) {
+        localStorage.removeItem('apiKey');
+        localStorage.removeItem('authorization');
+        $('#apiKey').value = '';
+      } else {
+        const currentKey = state.apiKey || $('#apiKey').value.trim();
+        if (currentKey) {
+          localStorage.setItem('apiKey', currentKey);
+          localStorage.setItem('authorization', `ApiKey ${currentKey}`);
+        }
+      }
+    });
+
+    if (statusModalClose) {
+      statusModalClose.addEventListener('click', closeStatusModal);
+    }
+    if (statusModal) {
+      statusModal.addEventListener('click', (e) => {
+        if (e.target === statusModal) closeStatusModal();
+      });
+    }
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && statusModal?.classList.contains('open')) {
+        closeStatusModal();
+      }
+    });
+
+    window.addEventListener('resize', () => {
+      updateRealtimeCharts();
+    });
+
+    // ============== Init ==============
+    setInterval(() => {
+      updateRecordTimers();
+      tickRealtimeKeepalive();
+      updateRealtimeCharts();
+    }, 1000);
+    loadCfgToUI();
+    // Connect socket immediately (allowed even if not logged-in)
+    connectSocket();
+    // If we already have a session, try to subscribe when socket connects
+    if (state.authorization && state.user) {
+      println('Session existante détectée.');
+    }
+  </script>
+</body>
+</html>
