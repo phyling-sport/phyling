@@ -1,26 +1,9 @@
-from pathlib import Path
-
 import numpy
 from Cython.Build import cythonize
 from setuptools import Extension
-from setuptools import find_packages
 from setuptools import setup
 
-
-def load_requirements(path):
-    req_path = Path(__file__).resolve().parent / path
-    with req_path.open() as f:
-        return [line.strip() for line in f if line.strip() and not line.startswith("#")]
-
-
 setup(
-    name="phyling",
-    version="7.0.0",
-    description="Phyling public package",
-    license="MIT",
-    license_files=("LICENSE.txt",),
-    packages=find_packages(),
-    install_requires=load_requirements("requirements.txt"),
     ext_modules=cythonize(
         [
             Extension(
@@ -29,6 +12,5 @@ setup(
                 include_dirs=[numpy.get_include()],
             )
         ]
-    ),
-    url="https://github.com/phyling-sport/phyling",
+    )
 )

@@ -3,6 +3,20 @@ requires = [
     "setuptools>=61",
     "wheel",
     "Cython",
-    "numpy"
+    "numpy>=1.24.4,<3",
 ]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "phyling"
+version = "7.0.1b1"
+description = "Phyling public package"
+readme = "README.md"
+license = { file = "LICENSE.txt" }
+urls = { Homepage = "https://github.com/phyling-sport/phyling" }
+dependencies = [
+    "numpy>=1.24.4,<3",
+]
+
+[tool.setuptools]
+packages = ["phyling"]
