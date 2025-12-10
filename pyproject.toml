@@ -9,7 +9,6 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "phyling"
-version = "7.0.1b1"
 description = "Phyling public package"
 readme = "README.md"
 license = { file = "LICENSE.txt" }
@@ -17,6 +16,12 @@ urls = { Homepage = "https://github.com/phyling-sport/phyling" }
 dependencies = [
     "numpy>=1.24.4,<3",
 ]
+# if tag is "v7.0.0", version will be "7.0.0"
+dynamic = ["version"]
 
 [tool.setuptools]
 packages = ["phyling"]
+
+[tool.setuptools_scm]
+version_scheme = "guess-next-dev"
+local_scheme = "no-local-version"
