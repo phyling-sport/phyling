@@ -5,6 +5,11 @@ requires = [
     "wheel",
     "Cython",
     "numpy>=1.24.4,<3",
+    "bleak",
+    "ujson",
+    "urllib3",
+    "aiohttp",
+    "python-socketio"
 ]
 build-backend = "setuptools.build_meta"
 
@@ -25,3 +30,4 @@ packages = ["phyling"]
 [tool.setuptools_scm]
 version_scheme = "guess-next-dev"
 local_scheme = "no-local-version"
+fallback_version = "0.0.0"
