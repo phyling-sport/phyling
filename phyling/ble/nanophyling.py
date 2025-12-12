@@ -13,7 +13,7 @@ from pandas import DataFrame
 # UUIDs of characteristics
 BLE_UUID_VERSION = "99064a28-8bef-4a2c-afe3-f17a28ebc8c3"
 BLE_UUID_MAXI_VERSION = "5e143caa-f57b-440f-b59e-bf2fcfa1b838"
-BLE_UUID_DATA = "00002A37-0000-1000-8000-00805F9B34FB"
+BLE_UUID_PHYLING = "65a0c51d-eb0e-4f56-9346-c6925abb2bec"
 
 # Values to write to start and stop recording
 BLE_NOTIF_EMPTY = b"_"
@@ -31,9 +31,19 @@ NANO_DEF_CONFIG = {
 
 ACC_SCALE_SELECTION = 16
 GYRO_RANGE = 2000
+MAG_RANGE = 16
 
 ACC_FACTOR = 0.061 * (ACC_SCALE_SELECTION >> 1) / 1000 * 9.81
 GYRO_FACTOR = 4.375 * (GYRO_RANGE / 125.0) / 1000.0
+MAG_FACTOR = (
+    1.0 / 1711
+    if MAG_RANGE == 16
+    else (
+        1.0 / 2281
+        if MAG_RANGE == 12
+        else (1.0 / 3421 if MAG_RANGE == 8 else (1.0 / 6842 if MAG_RANGE == 4 else 1.0))
+    )
+)
 TEMP_FACTOR = 1.0 / 100
 
 
@@ -125,6 +135,8 @@ class NanoPhyling:
                     factor = GYRO_FACTOR
                 elif value.startswith("temp_"):
                     factor = TEMP_FACTOR
+                elif value.startswith("mag_"):
+                    factor = MAG_FACTOR
                 line.append(
                     int.from_bytes(
                         data[start_index : start_index + 2],
@@ -162,14 +174,13 @@ class NanoPhyling:
             print("Connected to BLE sensor")
 
             # Send maxi version
-            await client.write_gatt_char(
-                BLE_UUID_MAXI_VERSION, b"v6.6.4", response=True
-            )
-            print("Maxi version sent")
+            version = b"v7.0.1"
+            await client.write_gatt_char(BLE_UUID_MAXI_VERSION, version, response=True)
+            print(f"Maxi version sent: {version.decode('utf-8')}")
 
             # Send configuration
             await client.write_gatt_char(
-                BLE_UUID_DATA,
+                BLE_UUID_PHYLING,
                 BLE_NOTIF_NANO_SEND_CONFIG + bytes(ujson.dumps(self.config), "utf-8"),
             )
             print(f"Configuration sent: {self.config}")
@@ -178,11 +189,11 @@ class NanoPhyling:
             print(f"Sensor version: {version.decode('utf-8')}")
 
             # Enable notifications on the data characteristic
-            await client.start_notify(BLE_UUID_DATA, self._notification_handler)
+            await client.start_notify(BLE_UUID_PHYLING, self._notification_handler)
             print("Notifications enabled")
 
             # Start recording
-            await client.write_gatt_char(BLE_UUID_DATA, BLE_NOTIF_START_REC)
+            await client.write_gatt_char(BLE_UUID_PHYLING, BLE_NOTIF_START_REC)
             print("Recording started")
 
             # Wait for notifications until interruption
@@ -202,9 +213,9 @@ class NanoPhyling:
                     await asyncio.sleep(1)
 
             # Stop recording before exiting
-            await client.write_gatt_char(BLE_UUID_DATA, BLE_NOTIF_STOP_REC)
+            await client.write_gatt_char(BLE_UUID_PHYLING, BLE_NOTIF_STOP_REC)
             print("Recording stopped")
-            await client.stop_notify(BLE_UUID_DATA)
+            await client.stop_notify(BLE_UUID_PHYLING)
             print("Notifications stopped")
             print(
                 f"Number of recorded data: {self.nbDatas}, use NanoPhyling.get_df() to retrieve them"
