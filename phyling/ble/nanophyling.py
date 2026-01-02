@@ -174,7 +174,7 @@ class NanoPhyling:
             print("Connected to BLE sensor")
 
             # Send maxi version
-            version = b"v7.0.1"
+            version = b"v7.0.2"
             await client.write_gatt_char(BLE_UUID_MAXI_VERSION, version, response=True)
             print(f"Maxi version sent: {version.decode('utf-8')}")
 
