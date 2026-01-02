@@ -210,7 +210,7 @@ class NanoPhyling:
                     print(f"Stopping recording after {duration} seconds")
                     break
                 else:
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(0.1)
 
             # Stop recording before exiting
             await client.write_gatt_char(BLE_UUID_PHYLING, BLE_NOTIF_STOP_REC)
