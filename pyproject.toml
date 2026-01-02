@@ -21,6 +21,11 @@ license = { file = "LICENSE.txt" }
 urls = { Homepage = "https://github.com/phyling-sport/phyling" }
 dependencies = [
     "numpy>=1.24.4,<3",
+    "bleak",
+    "ujson",
+    "urllib3",
+    "aiohttp",
+    "python-socketio"
 ]
 dynamic = ["version"]
 
