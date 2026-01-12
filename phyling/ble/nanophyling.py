@@ -174,7 +174,7 @@ class NanoPhyling:
             print("Connected to BLE sensor")
 
             # Send maxi version
-            version = b"v7.0.1"
+            version = b"v7.0.2"
             await client.write_gatt_char(BLE_UUID_MAXI_VERSION, version, response=True)
             print(f"Maxi version sent: {version.decode('utf-8')}")
 
@@ -210,7 +210,7 @@ class NanoPhyling:
                     print(f"Stopping recording after {duration} seconds")
                     break
                 else:
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(0.1)
 
             # Stop recording before exiting
             await client.write_gatt_char(BLE_UUID_PHYLING, BLE_NOTIF_STOP_REC)
