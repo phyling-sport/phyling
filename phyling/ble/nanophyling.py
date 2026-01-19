@@ -81,6 +81,7 @@ class NanoPhyling:
         name: Union[str, None] = None,
         address: Union[str, None] = None,
         config: dict[str, Any] = NANO_DEF_CONFIG,
+        gyro_offsets: dict[str, float] = {"x": 0.0, "y": 0.0, "z": 0.0},
     ):
         """
         Initialize the NanoPhyling class. You have to provide the name OR the address of the BLE device.
@@ -106,49 +107,71 @@ class NanoPhyling:
         self.nbDatas = 0
         self.startBLETime = 0
         self.startRecordTime = 0
+        self.gyro_offsets = gyro_offsets
 
     def _notification_handler(self, sender, data):
         """
-        Handle notifications from the BLE device. This function is called when data is received from the device.
-        It decodes the data and appends it to the DataFrame.
+        Handle notifications from the BLE device. Decodes data and applies gyro offsets.
         """
         T = int.from_bytes(data[:8], byteorder="little") / 1e6
         if self.startBLETime == 0:  # on first notification
             self.startBLETime = T  # set start time of BLE (to start df at 0)
             self.startRecordTime = (
                 time.time()
-            )  # set start time of record (to stop recording after duration)
+            )  # set start time of record (to stop rec after duration)
+
         T = T - self.startBLETime
         deltaT = int.from_bytes(data[8:10], byteorder="little") / 1e6
         current_index = 10
         idx = 0
+
+        if not hasattr(self, "gyro_offsets"):
+            self.gyro_offsets = {"x": 0.0, "y": 0.0, "z": 0.0}
+
+        # Print de confirmation au tout début de l'acquisition
+        if self.nbDatas == 0:
+            print("--- Acquisition Info ---")
+            print(
+                f"Gyroscope offsets applied: X={self.gyro_offsets['x']:.4f}, "
+                f"Y={self.gyro_offsets['y']:.4f}, Z={self.gyro_offsets['z']:.4f}"
+            )
+            print("------------------------")
+
         # Get all datas
-        while len(self.config["data"]) * 2 + current_index < len(data):
+        while len(self.config["data"]) * 2 + current_index <= len(data):
             line = []
             line.append(T + idx * deltaT)
-            for i, value in enumerate(self.config["data"]):
+
+            for i, value_name in enumerate(self.config["data"]):
                 start_index = current_index + (i * 2)
-                factor = 1
-                if value.startswith("acc_"):
-                    factor = ACC_FACTOR
-                elif value.startswith("gyro_"):
-                    factor = GYRO_FACTOR
-                elif value.startswith("temp_"):
-                    factor = TEMP_FACTOR
-                elif value.startswith("mag_"):
-                    factor = MAG_FACTOR
-                line.append(
-                    int.from_bytes(
-                        data[start_index : start_index + 2],
-                        byteorder="little",
-                        signed=True,
-                    )
-                    * factor
+
+                raw_val = int.from_bytes(
+                    data[start_index : start_index + 2],
+                    byteorder="little",
+                    signed=True,
                 )
+
+                factor = 1
+                offset = 0.0
+
+                if value_name.startswith("acc_"):
+                    factor = ACC_FACTOR
+                elif value_name.startswith("gyro_"):
+                    factor = GYRO_FACTOR
+                    axis = value_name.split("_")[1]  # x,y,z
+                    offset = self.gyro_offsets.get(axis, 0.0)  # apply offset
+                elif value_name.startswith("temp_"):
+                    factor = TEMP_FACTOR
+                elif value_name.startswith("mag_"):
+                    factor = MAG_FACTOR
+
+                line.append((raw_val * factor) - offset)
+
             current_index += len(self.config["data"]) * 2
             idx += 1
             self.nbDatas += 1
             self.df.loc[len(self.df)] = line
+
             if self.nbDatas % 500 == 0:
                 print(f"Number of recorded data: {self.nbDatas}")
 
@@ -237,6 +260,41 @@ class NanoPhyling:
             )
             return
         asyncio.run(self._run_ble_client(duration))
+
+    def calibrate_gyro(self) -> dict:
+        """
+        Calculates gyroscope bias by averaging 5 seconds of stationary data.
+        Stores offsets in the instance to automatically zero-center future measurements.
+        """
+
+        self.disconnect = False
+        if not self.address:
+            self.address = find_device(name=self.name)
+
+        print("Calibration : Do not touch the Nano for 5 secondes...")
+
+        old_gyro_offsets = self.gyro_offsets
+        self.gyro_offsets = {"x": 0.0, "y": 0.0, "z": 0.0}
+
+        asyncio.run(self._run_ble_client(5))
+
+        try:
+            self.gyro_offsets = {
+                "x": float(self.df["gyro_x"].mean()),
+                "y": float(self.df["gyro_y"].mean()),
+                "z": float(self.df["gyro_z"].mean()),
+            }
+            print(f"Calibration passed. New offsets : {self.gyro_offsets}")
+        except KeyError:
+            print("Error : columns gyro_x/y/z not found.")
+            self.gyro_offsets = old_gyro_offsets
+
+        print(
+            "To apply these offsets in future recordings, pass them to the NanoPhyling constructor:\n"
+            f"\tNanoPhyling(..., gyro_offsets={self.gyro_offsets})"
+        )
+
+        return self.gyro_offsets
 
     def get_df(self) -> DataFrame:
         """
