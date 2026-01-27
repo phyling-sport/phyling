@@ -81,11 +81,45 @@ cdef dict sizeElemDict = {
     "int64": 8,
     "float32": 4,
     "float64": 8,
+    # array32_float32
+    # array32x32_int16
 }
 
+cpdef dict getArrayInfo(str valType):
+    cdef dict info = {
+        "dim1": 0,
+        "dim2": 0,
+        "elemType": "",
+        "elemSize": 0,
+        "totalSize": 0,
+    }
+
+    if valType.startswith("array"):
+        match = re.match(r"array(\d+)x(\d+)_(\w+)", valType)
+        if match:
+            info["dim1"] = int(match.group(1))
+            info["dim2"] = int(match.group(2))
+            info["elemType"] = match.group(3)
+            info["elemSize"] = getSizeElem(info["elemType"])
+            info["totalSize"] = info["dim1"] * info["dim2"] * info["elemSize"]
+            return info
+        match = re.match(r"array(\d+)_(\w+)", valType)
+        if match:
+            info["dim1"] = int(match.group(1))
+            info["dim2"] = 0
+            info["elemType"] = match.group(2)
+            info["elemSize"] = getSizeElem(info["elemType"])
+            info["totalSize"] = info["dim2"] * info["elemSize"]
+            return info
+    raise Exception("Invalid type: {}, must be arrayA_<type> or arrayAxB_<type>".format(valType))
+
 cpdef unsigned int getSizeElem(str valType):
+    cdef dict arrayInfo
+
     if valType in sizeElemDict:
         return sizeElemDict[valType]
+    if valType.startswith("array"):
+        return getArrayInfo(valType)["totalSize"]
     raise Exception("Invalid type: {}".format(valType))
 
 
@@ -96,11 +130,21 @@ cpdef str getTypeElem(str valType):
         return "int"
     if valType.startswith("float"):
         return "float"
-    raise Exception("Invalid type: {}, must be uintX, intX or floatX".format(valType))
+    if valType.startswith("array"):
+        return "array"
+    raise Exception("Invalid type: {}, must be uintX, intX, floatX, arrayA_<type>, arrayAxB_<type>".format(valType))
 
 
 cpdef object getElem(char * content, int curPos, str valType, int content_size=0):
     cdef int size = getSizeElem(valType)
+
+    # For array types
+    cdef dict arrayInfo
+    cdef list array = []
+    cdef list row = []
+    cdef int x, y
+    cdef int offset = 0
+
     if content_size > 0 and curPos + size > content_size:
         raise Exception("File is broken, unpack requires a buffer of {} bytes".format(size))
     if getTypeElem(valType) == "uint":
@@ -121,6 +165,19 @@ cpdef object getElem(char * content, int curPos, str valType, int content_size=0
                 "<f" if size == 4 else "<d", content[curPos : curPos + size]  # noqa
             )[0]
         )
+    if getTypeElem(valType) == "array":
+        arrayInfo = getArrayInfo(valType)
+        for x in range(arrayInfo["dim1"]):
+            if arrayInfo["dim2"] == 0:
+                array.append(getElem(content, curPos + offset, arrayInfo["elemType"], content_size))
+                offset += arrayInfo["elemSize"]
+            else:
+                row = []
+                for y in range(arrayInfo["dim2"]):
+                    row.append(getElem(content, curPos + offset, arrayInfo["elemType"], content_size))
+                    offset += arrayInfo["elemSize"]
+                array.append(row)
+        return array
 
 
 cpdef object applyFactor(object value, object curMod, object elem):
@@ -187,6 +244,8 @@ cpdef bint filterValTooHighBeforeCalib(object curMod, object modValNamed, object
     for key, val in modValNamed.items():
         if val == "T":
             continue
+        if not isinstance(modVal[val], (int, float)):
+            continue
 
         if curMod["type"] == "adc" or curMod["type"] == "analog":
             if modVal[val] < 0 or modVal[val] > 25:
@@ -206,6 +265,9 @@ cpdef bint filterValTooHighAfterCalib(object curMod, object modValNamed, object 
     for key, val in modValNamed.items():
         if val == "T":
             continue
+        if not isinstance(modVal[val], (int, float)):
+            continue
+
         maxval = 10**10 if val != "gpstimeUs" else 10**16  # year 2286 in us
         if abs(modVal[val]) > maxval:
             logSpam.warning(f"Max value reached {curModName}[{val}] = {modVal[val]}")
