@@ -636,7 +636,7 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
                 if col in header["modules"][module_name]:
                     jsonData["modules"][module_name]["description"][col] = header["modules"][module_name][col]
             jsonData["modules"][module_name]["data"]["T"] = []
-            jsonData["modules"][module_name]["data_info"]["T"] = {"unit": "s", "description": ""}
+            jsonData["modules"][module_name]["data_info"]["T"] = {"unit": "s", "description": "", "type": ""}
             description = header["modules"][module_name]["description"]
             for i in range(2, len(description)):
                 realVarName = getVarName(header, module_name, description[i]["name"])
@@ -649,7 +649,7 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
                 jsonData["modules"][module_name]["data"][realVarName] = []
                 jsonData["modules"][module_name]["data_info"][
                     realVarName
-                ] = {"unit": description[i]["unit"], "description": descr}
+                ] = {"unit": description[i]["unit"], "description": descr, "type": description[i]["type"]}
 
         # save data
         if timeSec > lastTime:
