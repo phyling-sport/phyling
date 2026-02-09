@@ -418,11 +418,15 @@ cpdef object loadOne(dict header, char * content, int curPos, dict calib_dict=No
     return data, missingByteSize + curMod["size"], modTime / 1000000
 
 
-cpdef object getCalibration(str filename):
+cpdef object getCalibration(str filename, use_s3=True):
     cdef object calibration = ""
     cdef str type = ""
     cdef bytes ln
-    cdef bytes filecontent = S3.get_file_bytes(filename)
+    cdef bytes filecontent
+    if use_s3:
+        filecontent = S3.get_file_bytes(filename)
+    else:
+        filecontent = get_file_bytes_local(filename)
     for ln in filecontent.splitlines(True):
         if ln == b"":
             break
@@ -444,11 +448,14 @@ cpdef object getCalibration(str filename):
     return calibration
 
 
-cpdef object updateCalibration(str filename, str oldFilename, object calibration):
+cpdef object updateCalibration(str filename, str oldFilename, object calibration, use_s3=True):
     cdef str type = ""
     cdef bytes ln
-    cdef bytes filecontent = S3.get_file_bytes(filename)
-
+    cdef bytes filecontent
+    if use_s3:
+        filecontent = S3.get_file_bytes(filename)
+    else:
+        filecontent = get_file_bytes_local(filename)
     if not S3.file_exists(oldFilename):
         logging.info(f"Save a copy of file in {oldFilename}")
         S3.copy_file(filename, oldFilename)
