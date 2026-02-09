@@ -4,15 +4,13 @@ import struct
 
 import numpy as np
 
-# Cache for previously processed calibration data to avoid redundant computations
-saved_calibration_data: dict[str, dict] = {}
+# Cache global pour stocker les LUTs pré-calculées
+# Clé : hash du buffer, Valeur : np.ndarray de forme (1024, 256)
+saved_luts: dict[str, np.ndarray] = {}
 
 
-def get_calibration_fingerprint(calibration_data):
-    """
-    Generates a unique fingerprint for the given calibration data using SHA-256.
-    """
-    return hashlib.sha256(calibration_data).hexdigest()
+def get_calibration_fingerprint(calibration_raw_bytes):
+    return hashlib.sha256(calibration_raw_bytes).hexdigest()
 
 
 def generate_texisense_calibration_data(buffer):
@@ -102,78 +100,66 @@ def generate_texisense_calibration_data(buffer):
     return final_calibration
 
 
-def apply_texisense_calibration(
-    raw_matrix, calibration_data=None, calibration_base64=None, use_cache=True
-):
+def generate_lut(calibration_data):
     """
-    Applies the calibration to a 32x32 raw matrix.
-
-    Args:
-        raw_matrix: 32x32 list[list[int]] (raw values 0-255).
-        calibration_data: List of 1024 lists, where each sub-list contains
-                         the pivot points (raw, pressure) for a specific sensor.
-        calibration_base64: Base64 string containing the calibration data.
-        use_cache: Whether to use cached calibration data if available.
-    Returns:
-        np.ndarray: 32x32 matrix of calculated pressures in Pascal.
+    Transforme les points de pivot en une Look-Up Table (LUT) 1024x256.
+    On pré-calcule l'interpolation pour chaque valeur brute possible (0-255).
     """
-    if calibration_data is None and calibration_base64 is not None:
-        calibration_raw = base64.b64decode(calibration_base64)
-        if use_cache:
-            hash = get_calibration_fingerprint(calibration_raw)
-            if hash not in saved_calibration_data:
-                saved_calibration_data[hash] = generate_texisense_calibration_data(
-                    calibration_raw
-                )
-            calibration_data = saved_calibration_data[hash]
-        else:
-            calibration_data = generate_texisense_calibration_data(calibration_raw)
-    elif calibration_data is None:
-        raise ValueError(
-            "Either calibration_data or calibration_base64 must be provided."
-        )
-
-    # Convert to numpy array for easier manipulation (flattening)
-    flat_raw = np.array(raw_matrix).flatten()
-    if len(flat_raw) != 1024:
-        raise ValueError("The input matrix must contain exactly 1024 elements.")
-
-    calibrated_flat = np.zeros(1024)
+    # On crée une grille de 256 valeurs (0, 1, 2, ..., 255)
+    raw_range = np.arange(256)
+    lut = np.zeros((1024, 256), dtype=np.float32)
 
     for s in range(1024):
-        r = flat_raw[s]
-        points = calibration_data[s]  # List of tuples (raw, pressure)
+        points = calibration_data[s]
+        xp = [p[0] for p in points]  # Raw
+        fp = [p[1] for p in points]  # Pressure
 
-        # Extract coordinates for interpolation
-        xp = [p[0] for p in points]  # Raw values (X)
-        fp = [p[1] for p in points]  # Pressures (Y)
+        # Interpolation numpy sur toute la plage 0-255 d'un coup
+        # left/right gèrent les cas hors bornes (paliers 0 et max)
+        interp_values = np.interp(raw_range, xp, fp)
 
-        # Case 1: Raw value below the first point (often 0)
-        if r <= xp[0]:
-            calibrated_flat[s] = fp[0]
+        # Optionnel : Si tu veux garder ton extrapolation spécifique au-delà du dernier point
+        # au lieu de plafonner (comportement par défaut de np.interp)
+        last_raw = xp[-1]
+        if last_raw < 255 and len(xp) >= 2:
+            slope = (fp[-1] - fp[-2]) / (xp[-1] - xp[-2]) if (xp[-1] != xp[-2]) else 0
+            # On remplace les valeurs après le dernier point connu par l'extrapolation
+            extrapol_mask = raw_range > last_raw
+            interp_values[extrapol_mask] = fp[-1] + slope * (
+                raw_range[extrapol_mask] - last_raw
+            )
 
-        # Case 2: Raw value above the last step (Extrapolation)
-        elif r >= xp[-1]:
-            # Calculate the slope between the last two points for extrapolation
-            if len(xp) >= 2:
-                r_last = xp[-1]
-                r_prev = xp[-2]
-                p_last = fp[-1]
-                p_prev = fp[-2]
+        lut[s] = interp_values
 
-                if r_last != r_prev:
-                    slope = (p_last - p_prev) / (r_last - r_prev)
-                    calibrated_flat[s] = p_last + slope * (r - r_last)
-                else:
-                    calibrated_flat[s] = p_last
-            else:
-                calibrated_flat[s] = fp[-1]
+    return lut
 
-        # Case 3: Standard linear interpolation between two steps
-        else:
-            calibrated_flat[s] = np.interp(r, xp, fp)
 
-    # Reconstruct the 32x32 matrix
-    return calibrated_flat.reshape(
-        32, 32
-    ).transpose()  # Transpose to match original orientation if needed
+def apply_texisense_calibration(raw_matrix, calibration_base64):
+    """
+    Applique la calibration de manière ultra-optimisée en utilisant une LUT.
+    """
+    calibration_raw = base64.b64decode(calibration_base64)
+    h = get_calibration_fingerprint(calibration_raw)
+
+    # 1. Gestion du cache de la LUT
+    if h not in saved_luts:
+        # On génère les points de pivots (ton ancienne fonction)
+        calib_points = generate_texisense_calibration_data(calibration_raw)
+        # On transforme ces points en une table de recherche (LUT)
+        saved_luts[h] = generate_lut(calib_points)
+
+    lut = saved_luts[h]
+
+    # 2. Application "Magique" (Lookup vectorisé)
+    # On aplatit la matrice d'entrée (32x32 -> 1024)
+    flat_raw = np.array(raw_matrix, dtype=np.int32).flatten()
+
+    # On crée un index pour chaque capteur (0 à 1023)
+    sensor_indices = np.arange(1024)
+
+    # L'indexation NumPy fait le lookup instantanément :
+    # Pour chaque capteur 'i', on prend la valeur dans lut[i, valeur_brute_du_capteur_i]
+    calibrated_flat = lut[sensor_indices, flat_raw]
+
+    # 3. Retour au format 32x32
+    return calibrated_flat.reshape(32, 32).transpose()
