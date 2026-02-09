@@ -2,6 +2,8 @@ import logging
 
 import numpy as np
 
+from phyling.decoder import calib_texisense
+
 
 def calibration_1D(data, coef=None, offset=None):
     """
@@ -77,6 +79,7 @@ def calibration(data, module, calib):
     for key, value in calib[module].items():
         if key == "high_range_gyro":
             continue
+
         coef = value["coef"] if "coef" in value else None
         offset = value["offset"] if "offset" in value else None
         if key in mapper:
@@ -89,6 +92,18 @@ def calibration(data, module, calib):
                 elif all([col in data for col in cols2]):
                     mapper[key] = cols2
             data = calibration_3D(data, mapper[key], coef, offset)
+        elif key in data and (
+            "texisense_calib_base64" in calib[module][key]
+            or "texisense_calib" in calib[module][key]
+        ):
+            data[key] = calib_texisense.apply_texisense_calibration(
+                data[key],
+                calibration_base64=calib[module][key].get(
+                    "texisense_calib_base64", None
+                ),
+                calibration_data=calib[module][key].get("texisense_calib", None),
+                use_cache=True,
+            )
         elif key in data:
             data[key] = calibration_1D(data[key], coef, offset)
 
