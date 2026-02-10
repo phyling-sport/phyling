@@ -638,7 +638,7 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
                 "data": {},
                 "data_info": {},
             }
-            cols = ["rate", "name"]
+            cols = ["rate", "type", "name", "bleName"]  # cols to copy in description
             for col in cols:
                 if col in header["modules"][module_name]:
                     jsonData["modules"][module_name]["description"][col] = header["modules"][module_name][col]
@@ -654,9 +654,14 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
                             "description"
                         ]
                 jsonData["modules"][module_name]["data"][realVarName] = []
-                jsonData["modules"][module_name]["data_info"][
-                    realVarName
-                ] = {"unit": description[i]["unit"], "description": descr, "type": description[i]["type"]}
+
+                jsonData["modules"][module_name]["data_info"][realVarName] = {
+                    "description": descr
+                }
+                cols = ["unit", "type", "min", "max"]  # cols to copy in data_info (for each data column)
+                for col in cols:
+                    if col in description[i]:
+                        jsonData["modules"][module_name]["data_info"][realVarName][col] = description[i][col]
 
         # save data
         if timeSec > lastTime:

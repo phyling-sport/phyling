@@ -414,6 +414,116 @@ class PhylingAPI:
         }
         return res
 
+    def get_record(
+        self,
+        rec_id: int,
+    ):
+        """Get a record from the API
+
+        Args:
+            rec_id (int): The record ID
+        Returns:
+            Record: The record object
+        """
+        res = self.GET(
+            url=f"/records/{rec_id}",
+        )
+        if not res:
+            return None
+        if res.status != 200:
+            return None
+        response_data = ujson.loads(res.data)
+        return Record(api=self, desc=response_data)
+
+    def get_record_data(
+        self,
+        request_args: dict,
+    ):
+        """
+        Get some decoded data for plotting
+
+        POST /records/data {
+            "data": {
+                <rec_id>: [
+                    {  # first selection
+                        "x": {
+                            "type": "range",
+                            "name": "T",
+                            "range": [<x-start>, <x-end>],
+                            "maxData": 500
+                        },
+                        "y": { "imu.acc_x": {}, "imu.acc_y": {}, ... }
+                    },
+                    {  # second selection
+                        "x": {
+                            "type": "selection",
+                            "name": "T",
+                            "num": 2,
+                            "maxData": 500
+                        },
+                        "y": { "imu.acc_x": {}, "imu.acc_y": {}, ... }
+                    },
+                ],
+                ...  // can be multiple records
+            }
+        }
+
+        >> response
+        {
+            "data": {
+                <rec_id>: [
+                    {  // first data selection
+                        "xrange": {'D': [], 'T': [2.79, 9.99], 'x': [2.79, 9.99]},
+                        "data": {
+                            "imu.acc_x": {
+                                "id": 0,
+                                "label": "imu.acc_x",
+                                "title": "imu.acc_x",
+                                "data": [{"x": 2.79, "y": 0.123}, {"x": 2.80, "y": 0.125}, ...],
+                                "yRange": [],
+                                "color": None,
+                                "type": "number"
+                            },
+                            "imu.acc_y": {
+                                "id": 1,
+                                "label": "imu.acc_y",
+                                "title": "imu.acc_y",
+                                "data": [{"x": 2.79, "y": 0.223}, {"x": 2.80, "y": 0.225}, ...],
+                                "yRange": [],
+                                "color": None,
+                                "type": "number"
+                            }
+                        }
+                    },
+                    {  // second data selection
+                        "xrange": {'D': [0.0, 10.0], 'T': [2.79, 9.99], 'x': [2.79, 9.99]},
+                        "data": {
+                            "imu.acc_x": {
+                                "id": 0,
+                                "label": "imu.acc_x",
+                                "title": "imu.acc_x",
+                                "data": [{"x": 2.79, "y": 0.123}, {"x": 2.80, "y": 0.125}, ...],
+                                "yRange": [],
+                                "color": None,
+                                "type": "number"
+                            }
+                        }
+                    },
+                ],
+                ...
+            }
+        }
+        """
+        res = self.POST(
+            url="/records/data",
+            body=ujson.dumps(request_args),
+        )
+        if not res:
+            return None
+        if res.status != 200:
+            return None
+        return ujson.loads(res.data)
+
     def download_record(
         self,
         rec_id: int,
