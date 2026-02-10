@@ -438,79 +438,128 @@ class PhylingAPI:
     def get_record_data(
         self,
         request_args: dict,
+        describe_response: bool = False,
     ):
         """
         Get some decoded data for plotting
+        You can select multiple range of data on multiples records in the same request.
+        The response contains a dict with all records and all data selections for each record in the same order.
 
+        The list of the data that can be selected can be optained with `GET /records/<rec_id>` (available_data field).
+        ```
+        data range params: (for each data selection)
+            x:
+                - type: range or selection
+                - name: the name of the x axis (for example T or D)
+                - range: [x-start, x-end] (only for range type). [] to select all
+                - num: the num of the selection if you want to select a selection (range is computed automatically)
+                - maxData: the max number of points to return. If there are more points, a lttb is applied
+            y:
+                - list of the data to select. For example: ["imu.acc_x", "imu.acc_y" ]
+
+        response range format: (for each data selection)
+            xrange: Can contains D, T and x ranges
+                - D: [D-start, D-end] (only if distance is available)
+                - T: [T-start, T-end]
+                - x: [x-start, x-end] -> x is the selected range type (T or D)
+            data: dict of the selected data with the following format:
+                "imu.acc_x": {
+                    "id": 0,
+                    "label": "imu.acc_x",  # name of the data
+                    "title": "imu.acc_x",  # title (to display on the plot for example)
+                    "data": [{"x": 2.79, "y": 0.123}, {"x": 2.80, "y": 0.125}, ...],
+                    "yRange": [ymin, ymax],  # if set, the y range to apply on the plot
+                    "color": "#ff0000",  # if set, the color to use for the plot
+                    "type": "number"  # can be number, array32x32, etc.
+                },
+                ...
+        ```
+
+
+        Example of request body for 2 selection in a single record:
         POST /records/data {
             "data": {
-                <rec_id>: [
-                    {  # first selection
+                "818": [
+                    {
                         "x": {
                             "type": "range",
                             "name": "T",
-                            "range": [<x-start>, <x-end>],
-                            "maxData": 500
+                            "range": [ 10, 30 ],
+                            "maxData": 5
                         },
-                        "y": { "imu.acc_x": {}, "imu.acc_y": {}, ... }
+                        "y": [ "imu.acc_x","imu.acc_y","imu.acc_z" ]
                     },
-                    {  # second selection
+                    {
                         "x": {
-                            "type": "selection",
+                            "type": "range",
                             "name": "T",
-                            "num": 2,
-                            "maxData": 500
+                            "range": [],
+                            "maxData": 5
                         },
-                        "y": { "imu.acc_x": {}, "imu.acc_y": {}, ... }
-                    },
-                ],
-                ...  // can be multiple records
+                        "y": [ "imu.acc_x" ]
+                    }
+                ]
             }
         }
-
         >> response
         {
             "data": {
-                <rec_id>: [
-                    {  // first data selection
-                        "xrange": {'D': [], 'T': [2.79, 9.99], 'x': [2.79, 9.99]},
-                        "data": {
-                            "imu.acc_x": {
-                                "id": 0,
-                                "label": "imu.acc_x",
-                                "title": "imu.acc_x",
-                                "data": [{"x": 2.79, "y": 0.123}, {"x": 2.80, "y": 0.125}, ...],
-                                "yRange": [],
-                                "color": None,
-                                "type": "number"
-                            },
-                            "imu.acc_y": {
-                                "id": 1,
-                                "label": "imu.acc_y",
-                                "title": "imu.acc_y",
-                                "data": [{"x": 2.79, "y": 0.223}, {"x": 2.80, "y": 0.225}, ...],
-                                "yRange": [],
-                                "color": None,
-                                "type": "number"
-                            }
+                "818": [
+                {
+                    "data": {
+                        "imu.acc_x": {
+                            "color": null,
+                            "data": [ { "x": 10.001, "y": 0.24262 }, ..., { "x": 29.996, "y": 0.27987 } ],
+                            "id": 0,
+                            "label": "imu.acc_x",
+                            "title": "imu.acc_x",
+                            "type": "number",
+                            "yRange": []
+                        },
+                        "imu.acc_y": {
+                            "color": null,
+                            "data": [ { "x": 10.001, "y": 0.0446 }, ..., { "x": 29.996, "y": -0.0094 } ],
+                            "id": 1,
+                            "label": "imu.acc_y",
+                            "title": "imu.acc_y",
+                            "type": "number",
+                            "yRange": []
+                        },
+                        "imu.acc_z": {
+                            "color": null,
+                            "data": [ { "x": 10.001, "y": 9.67984 }, ..., { "x": 29.996, "y": 9.62028 } ],
+                            "id": 2,
+                            "label": "imu.acc_z",
+                            "title": "imu.acc_z",
+                            "type": "number",
+                            "yRange": []
                         }
                     },
-                    {  // second data selection
-                        "xrange": {'D': [0.0, 10.0], 'T': [2.79, 9.99], 'x': [2.79, 9.99]},
-                        "data": {
-                            "imu.acc_x": {
-                                "id": 0,
-                                "label": "imu.acc_x",
-                                "title": "imu.acc_x",
-                                "data": [{"x": 2.79, "y": 0.123}, {"x": 2.80, "y": 0.125}, ...],
-                                "yRange": [],
-                                "color": None,
-                                "type": "number"
-                            }
+                    "xrange": {
+                        "D": [],
+                        "T": [ 10, 29.995 ],
+                        "x": [ 10, 29.995 ]
+                    }
+                },
+                {
+                    "data": {
+                        "imu.acc_x": {
+                            "color": null,
+                            "data": [ { "x": 2.791, "y": 0.25851 }, ..., { "x": 58.786, "y": 0.32502 } ],
+                            "id": 0,
+                            "label": "imu.acc_x",
+                            "title": "imu.acc_x",
+                            "type": "number",
+                            "yRange": []
                         }
                     },
-                ],
-                ...
+                    "xrange": {
+                        "D": [],
+                        "T": [ 2.79, 58.795 ],
+                        "x": [ 2.79, 58.795 ]
+                    }
+                }
+                ]
             }
         }
         """
@@ -522,7 +571,24 @@ class PhylingAPI:
             return None
         if res.status != 200:
             return None
-        return ujson.loads(res.data)
+        data = ujson.loads(res.data)
+        if describe_response:
+            for rec_id, selections in data["data"].items():
+                print(f"Record ID: {rec_id}")
+                for idx, selection in enumerate(selections):
+                    print(f"  Selection {idx}:")
+                    print("    xrange:")
+                    for range_item in selection["xrange"]:
+                        print(f"      {range_item}: {selection['xrange'][range_item]}")
+                    print("    data:")
+                    for key, value in selection["data"].items():
+                        print(f"      {key}:")
+                        for k, v in value.items():
+                            if k == "data":
+                                continue
+                            print(f"        {k}: {v}")
+                        print(f"        data: [{len(value['data'])} points]")
+        return data
 
     def download_record(
         self,
