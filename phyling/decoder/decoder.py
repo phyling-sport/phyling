@@ -50,3 +50,32 @@ def decodeSaveFolder(path, verbose=True, overwrite=False):
         if not res:
             print(f"Could not decode file {file} ...")
     return filenames
+
+
+def getTypeGraph(valType: str) -> str:
+    """
+    Get the type for graphing purposes (number or arrayA or arrayAxB)
+
+        * number, uintX, intX, floatX => number
+        * arrayA_<type>, arrayA => arrayA
+        * arrayAxB_<type>, arrayAxB => arrayAxB
+        * else => exception
+    """
+    if (
+        valType == "number"
+        or valType.startswith("uint")
+        or valType.startswith("int")
+        or valType.startswith("float")
+    ):
+        return "number"
+    if valType.startswith("array"):
+        split = valType.split("_")
+        if len(split) == 2:
+            return split[0]  # arrayA or arrayAxB
+        elif len(split) == 1:
+            return valType  # arrayA or arrayAxB without type
+    raise Exception(
+        "Invalid type: {}, must be uintX, intX, floatX, arrayA_<type>, arrayAxB_<type>".format(
+            valType
+        )
+    )
