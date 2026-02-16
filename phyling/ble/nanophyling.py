@@ -296,12 +296,29 @@ class NanoPhyling:
 
         return self.gyro_offsets
 
-    def get_df(self) -> DataFrame:
+    def get_df(self, rolling: bool = True, window_s: float = 0.025) -> DataFrame:
         """
         Get the DataFrame containing the recorded data.
+        :param rolling: apply moving median if True
+        :param window_s: window size in seconds for moving median
         :return: DataFrame with recorded data
         """
-        return self.df
+
+        if self.df is None:
+            return None
+
+        df = self.df.copy()
+
+        if rolling:
+            rate = self.config.get("rate")
+            window = window_s * rate
+
+            cols_to_smooth = ["acc_x", "acc_y", "acc_z", "gyro_x", "gyro_y", "gyro_z"]
+
+            for col in cols_to_smooth:
+                df[col] = df[col].rolling(window=window, center=True).median()
+
+        return df
 
 
 if __name__ == "__main__":
