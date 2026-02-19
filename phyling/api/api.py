@@ -505,60 +505,62 @@ class PhylingAPI:
         {
             "data": {
                 "818": [
-                {
-                    "data": {
-                        "imu.acc_x": {
-                            "color": null,
-                            "data": [ { "x": 10.001, "y": 0.24262 }, ..., { "x": 29.996, "y": 0.27987 } ],
-                            "id": 0,
-                            "label": "imu.acc_x",
-                            "title": "imu.acc_x",
-                            "type": "number",
-                            "yRange": []
+                    {
+                        "data": {
+                            "imu.acc_x": {
+                                "color": null,
+                                "data": [ { "x": 10.001, "y": 0.24262 }, ..., { "x": 29.996, "y": 0.27987 } ],
+                                "id": 0,
+                                "label": "imu.acc_x",
+                                "title": "imu.acc_x",
+                                "type": "number",
+                                "yRange": []
+                            },
+                            "imu.acc_y": {
+                                "color": null,
+                                "data": [ { "x": 10.001, "y": 0.0446 }, ..., { "x": 29.996, "y": -0.0094 } ],
+                                "id": 1,
+                                "label": "imu.acc_y",
+                                "title": "imu.acc_y",
+                                "type": "number",
+                                "yRange": []
+                            },
+                            "imu.acc_z": {
+                                "color": null,
+                                "data": [ { "x": 10.001, "y": 9.67984 }, ..., { "x": 29.996, "y": 9.62028 } ],
+                                "id": 2,
+                                "label": "imu.acc_z",
+                                "title": "imu.acc_z",
+                                "type": "number",
+                                "yRange": []
+                            }
                         },
-                        "imu.acc_y": {
-                            "color": null,
-                            "data": [ { "x": 10.001, "y": 0.0446 }, ..., { "x": 29.996, "y": -0.0094 } ],
-                            "id": 1,
-                            "label": "imu.acc_y",
-                            "title": "imu.acc_y",
-                            "type": "number",
-                            "yRange": []
+                        "xrange": {
+                            "D": [],
+                            "T": [ 10, 29.995 ],
+                            "x": [ 10, 29.995 ]
                         },
-                        "imu.acc_z": {
-                            "color": null,
-                            "data": [ { "x": 10.001, "y": 9.67984 }, ..., { "x": 29.996, "y": 9.62028 } ],
-                            "id": 2,
-                            "label": "imu.acc_z",
-                            "title": "imu.acc_z",
-                            "type": "number",
-                            "yRange": []
-                        }
+                        "selectionNum": null
                     },
-                    "xrange": {
-                        "D": [],
-                        "T": [ 10, 29.995 ],
-                        "x": [ 10, 29.995 ]
+                    {
+                        "data": {
+                            "imu.acc_x": {
+                                "color": null,
+                                "data": [ { "x": 2.791, "y": 0.25851 }, ..., { "x": 58.786, "y": 0.32502 } ],
+                                "id": 0,
+                                "label": "imu.acc_x",
+                                "title": "imu.acc_x",
+                                "type": "number",
+                                "yRange": []
+                            }
+                        },
+                        "xrange": {
+                            "D": [],
+                            "T": [ 2.79, 58.795 ],
+                            "x": [ 2.79, 58.795 ]
+                        },
+                        "selectionNum": null
                     }
-                },
-                {
-                    "data": {
-                        "imu.acc_x": {
-                            "color": null,
-                            "data": [ { "x": 2.791, "y": 0.25851 }, ..., { "x": 58.786, "y": 0.32502 } ],
-                            "id": 0,
-                            "label": "imu.acc_x",
-                            "title": "imu.acc_x",
-                            "type": "number",
-                            "yRange": []
-                        }
-                    },
-                    "xrange": {
-                        "D": [],
-                        "T": [ 2.79, 58.795 ],
-                        "x": [ 2.79, 58.795 ]
-                    }
-                }
                 ]
             }
         }
