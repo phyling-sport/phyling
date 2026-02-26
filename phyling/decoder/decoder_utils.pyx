@@ -261,7 +261,6 @@ cpdef bint filterValTooHighBeforeCalib(object curMod, object modValNamed, object
 
 
 cpdef bint filterValTooHighAfterCalib(object curMod, object modValNamed, object modVal, str curModName):
-    errValTooHIGH = False
     for key, val in modValNamed.items():
         if val == "T":
             continue
@@ -305,6 +304,10 @@ cpdef bint filterValTooHighAfterCalib(object curMod, object modValNamed, object 
                 return False
             if val == "PDOP" and (modVal[val] < 0 or modVal[val] > 300):
                 logSpam.warning(f"Max value reached {curModName}[{val}] = {modVal[val]}")
+                return False
+            # remove values that are exactly 0. This tell that there is no GPS data
+            if val in ("nSat", "PDOP", "longitude", "latitude") and modVal[val] == 0:
+                logSpam.warning(f"Value is 0 {curModName}[{val}] = {modVal[val]} - gps not connected")
                 return False
     return True
 
@@ -580,6 +583,8 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
     for modName in header["modules"].keys():
         stats[modName] = 0
     cdef double lastTime = 0
+    cdef bint isMini = header["description"]["deviceType"] == "miniphyling"
+    cdef dict last_gps_data = {}  # last saved GPS values per module (keyed by module_name)
     cdef int dev_id = header["description"]["deviceId"]
 
     cdef int percent
@@ -631,6 +636,15 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
         stats[module_name] += 1
         curPos += size
 
+        # GPS deduplication: skip if no GPS values changed since last point
+        if newData["type"] == "gps" and isMini:
+            new_gps_vals = {}
+            for k, v in newData["data"].items():
+                if k != "T":
+                    new_gps_vals[k] = v
+            if module_name in last_gps_data and new_gps_vals == last_gps_data[module_name]:
+                continue
+            last_gps_data[module_name] = new_gps_vals
         # if first data saving
         if module_name not in jsonData["modules"]:
             jsonData["modules"][module_name] = {
