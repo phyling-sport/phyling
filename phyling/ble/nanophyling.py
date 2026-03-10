@@ -1,10 +1,10 @@
 import asyncio
-import signal
-import sys
+import re
 import time
 from typing import Any
 from typing import Union
 
+import pandas as pd
 import ujson
 from bleak import BleakClient
 from bleak import BleakScanner
@@ -46,35 +46,31 @@ MAG_FACTOR = (
 )
 TEMP_FACTOR = 1.0 / 100
 
+# empirically observed minimum of notifDiff across multiple recordings, used to correct the time
+NOTIF_DIFF_OFFSET = 0.5
+
+# Minimum connection duration (seconds) required to apply per-session time correction
+MIN_CONN_TIME_SEC = 15
+
 
 def find_device(name: str) -> Union[str, None]:
     """
-    Find the BLE device by name. This function scans for available BLE devices and returns the address of the device
-    with the specified name.
+    Scan BLE devices and return the address of the one matching name.
 
-    :param name: Name of the BLE device to find
-
-    :return: Address of the BLE device if found, None otherwise
+    :param name: BLE device name
+    :return: Address if found, None otherwise
     """
-    print("Searching for BLE sensor...")
+    print(f"Scanning for BLE sensor '{name}'...")
     devices = asyncio.run(BleakScanner.discover())
     for device in devices:
         if device.name == name:
-            print(f"Sensor found: {name} ({device.address})")
+            print(f"Found: {name} ({device.address})")
             return device.address
-    print("Sensor not found")
+    print(f"Device not found: {name}")
     return None
 
 
 class NanoPhyling:
-    name = None
-    address = None
-    config = {}
-    disconnect = False
-    df = None
-    nbDatas = 0
-    startBLETime = 0
-    startRecordTime = 0
 
     def __init__(
         self,
@@ -82,13 +78,16 @@ class NanoPhyling:
         address: Union[str, None] = None,
         config: dict[str, Any] = NANO_DEF_CONFIG,
         gyro_offsets: dict[str, float] = {"x": 0.0, "y": 0.0, "z": 0.0},
+        display_name: Union[str, None] = None,
     ):
         """
-        Initialize the NanoPhyling class. You have to provide the name OR the address of the BLE device.
+        Initialize the NanoPhyling class. Provide name OR address of the BLE device.
 
-        :param name: Name of the BLE device (default: None)
-        :param address: Address of the BLE device (default: None)
+        :param name: BLE device name (e.g. "NanoPhyling_42")
+        :param address: BLE device address
         :param config: Configuration dictionary (default: NANO_DEF_CONFIG)
+        :param gyro_offsets: Gyroscope offsets for calibration (default: all zeros)
+        :param display_name: Custom display name (overrides auto-generated name in logs and df prefixes)
         """
         self.name = name
         self.address = address
@@ -107,59 +106,79 @@ class NanoPhyling:
         self.nbDatas = 0
         self.startBLETime = 0
         self.startRecordTime = 0
+        self._conn_id = 0
         self.gyro_offsets = gyro_offsets
+        self._display_name = display_name
 
-    def _notification_handler(self, sender, data):
+    def get_name(self) -> str:
         """
-        Handle notifications from the BLE device. Decodes data and applies gyro offsets.
+        Return the display name for this device.
+        - If display_name was set, returns it.
+        - Otherwise extracts the number from "NanoPhyling_XX" → "nano-XX".
+        - Falls back to the BLE name if no number is found.
         """
-        T = int.from_bytes(data[:8], byteorder="little") / 1e6
-        if self.startBLETime == 0:  # on first notification
-            self.startBLETime = T  # set start time of BLE (to start df at 0)
-            self.startRecordTime = (
-                time.time()
-            )  # set start time of record (to stop rec after duration)
+        if self._display_name:
+            return self._display_name
+        if self.name:
+            match = re.search(r"_(\d+)$", self.name)
+            if match:
+                return f"nano-{match.group(1)}"
+            return self.name
+        return self.address or "unknown"
 
-        T = T - self.startBLETime
-        deltaT = int.from_bytes(data[8:10], byteorder="little") / 1e6
+    def set_display_name(self, display_name: str) -> None:
+        """
+        Set a custom display name for this device (used in logs and df prefixes).
+        Overrides the default auto-generated name based on the BLE name.
+
+        :param display_name: Custom name to set
+        """
+        self._display_name = display_name
+
+    def _notification_handler(self, _sender, data):
+        """
+        Handle BLE notifications and generate:
+          - T: temps relatif a l'horloge du nano (en secondes, float)
+          - notifDiff: différence de temps entre le PC et le nano (en secondes, float)
+        """
+        # dt = 1.0 / self.config["rate"]
+        pc_now = time.time()
+
+        curBleTime = int.from_bytes(data[:8], byteorder="little") / 1e6
+        elemSpacing = int.from_bytes(data[8:10], byteorder="little") / 1e6
+
+        if self.startBLETime == 0:
+            self.startBLETime = curBleTime
+            self.startPCtime = pc_now
+
         current_index = 10
-        idx = 0
+        num_sensors = len(self.config["data"])
+        sampleIndex = 0
+        timestamp_nano_start = self.startPCtime + curBleTime - self.startBLETime
+        diffTimeNotif = pc_now - timestamp_nano_start + NOTIF_DIFF_OFFSET
 
-        if not hasattr(self, "gyro_offsets"):
-            self.gyro_offsets = {"x": 0.0, "y": 0.0, "z": 0.0}
+        while current_index + 2 * num_sensors <= len(data):
+            # t_rel = sampleIndex * dt
+            timestamp_nano = timestamp_nano_start + (elemSpacing * sampleIndex)
 
-        # Print de confirmation au tout début de l'acquisition
-        if self.nbDatas == 0:
-            print("--- Acquisition Info ---")
-            print(
-                f"Gyroscope offsets applied: X={self.gyro_offsets['x']:.4f}, "
-                f"Y={self.gyro_offsets['y']:.4f}, Z={self.gyro_offsets['z']:.4f}"
-            )
-            print("------------------------")
-
-        # Get all datas
-        while len(self.config["data"]) * 2 + current_index <= len(data):
-            line = []
-            line.append(T + idx * deltaT)
+            line = [timestamp_nano, diffTimeNotif, self._conn_id]
 
             for i, value_name in enumerate(self.config["data"]):
-                start_index = current_index + (i * 2)
-
+                start_index = current_index + i * 2
                 raw_val = int.from_bytes(
                     data[start_index : start_index + 2],
                     byteorder="little",
                     signed=True,
                 )
 
-                factor = 1
+                factor = 1.0
                 offset = 0.0
-
                 if value_name.startswith("acc_"):
                     factor = ACC_FACTOR
                 elif value_name.startswith("gyro_"):
                     factor = GYRO_FACTOR
-                    axis = value_name.split("_")[1]  # x,y,z
-                    offset = self.gyro_offsets.get(axis, 0.0)  # apply offset
+                    axis = value_name.split("_")[1]
+                    offset = self.gyro_offsets.get(axis, 0.0)
                 elif value_name.startswith("temp_"):
                     factor = TEMP_FACTOR
                 elif value_name.startswith("mag_"):
@@ -167,116 +186,199 @@ class NanoPhyling:
 
                 line.append((raw_val * factor) - offset)
 
-            current_index += len(self.config["data"]) * 2
-            idx += 1
-            self.nbDatas += 1
             self.df.loc[len(self.df)] = line
 
-            if self.nbDatas % 500 == 0:
-                print(f"Number of recorded data: {self.nbDatas}")
+            sampleIndex += 1
+            self.nbDatas += 1
+            current_index += 2 * num_sensors
 
     def _signal_handler(self, sig, frame):
-        """
-        Handle signals (SIGINT, SIGTERM) to stop recording gracefully.
-        """
-        print("Interruption detected. Stopping recording...")
+        """Handle signals (SIGINT, SIGTERM) to stop recording gracefully."""
+        print(f"[{self.get_name()}] Interruption detected. Stopping recording...")
         self.disconnect = True
+
+    def _apply_sync(self, t0: float = None) -> None:
+        """
+        Apply time synchronization to the recorded DataFrame.
+        Corrects nano clock drift per connection session, computes T relative to t0
+        (or start of recording), adds ISO 8601 'time' column, 'fs' column, and removes
+        raw timestamp columns.
+
+        :param t0: Common reference time (Unix timestamp). If None, uses first timestamp_nano.
+        """
+        if self.df is None or len(self.df) == 0:
+            return
+
+        # 1. Compute fs from timestamp_nano and add as a column
+        self.df["fs"] = 1 / self.df["timestamp_nano"].diff()
+
+        # 2. Per-connection time correction (one offset per conn_id session)
+        for conn_id, group in self.df.groupby("conn_id"):
+            mask = self.df["conn_id"] == conn_id
+            duration = (
+                group["timestamp_nano"].iloc[-1] - group["timestamp_nano"].iloc[0]
+            )
+            if duration > MIN_CONN_TIME_SEC:
+                offset = (
+                    group["notifDiff"].min() - NOTIF_DIFF_OFFSET - 0.003
+                )  # remove 3ms
+                # print(
+                #     f"[{self.get_name()}] Session {conn_id}: applied time offset "
+                #     f"{offset * 1000:.1f}ms ({duration:.0f}s of data)"
+                # )
+            else:
+                offset = 0.0
+                # print(
+                #     f"[{self.get_name()}] Session {conn_id}: connected only {duration:.1f}s, "
+                #     f"no time offset applied (minimum {MIN_CONN_TIME_SEC}s required)"
+                # )
+            self.df.loc[mask, "timestamp_nano"] += offset
+
+        # 3. Compute T relative to t0 (common reference) or start of this recording
+        ref = t0 if t0 is not None else self.df["timestamp_nano"].iloc[0]
+        self.df["T"] = self.df["timestamp_nano"] - ref
+
+        # 4. Add ISO 8601 'time' column
+        abs_ts = pd.to_datetime(self.df["timestamp_nano"], unit="s", utc=True)
+        self.df["time"] = (
+            abs_ts.dt.strftime("%Y-%m-%dT%H:%M:%S.")
+            + abs_ts.dt.strftime("%f").str[:3]
+            + "Z"
+        )
+
+        # 5. Remove raw timestamp columns, reorder
+        data_cols = self.config["data"]
+        self.df = self.df[["T", "time", "fs"] + data_cols].reset_index(drop=True)
 
     async def _run_ble_client(self, duration: Union[int, None]):
         """
         Run the BLE client to connect to the device and start recording data.
-        This function handles the connection, configuration, and data recording.
+        Automatically reconnects on unexpected disconnection.
+        Compatible with asyncio.gather for parallel execution.
 
-        :param duration: Duration in seconds to record data (default: None, record indefinitely, kill to stop)
+        :param duration: Duration in seconds to record data (default: None, record indefinitely)
         """
-        self.df = DataFrame(columns=["T"] + self.config["data"])
+        self.df = DataFrame(
+            columns=["timestamp_nano", "notifDiff", "conn_id"] + self.config["data"]
+        )
         self.nbDatas = 0
-        self.startRecordTime = 0
         self.startBLETime = 0
-        async with BleakClient(self.address) as client:
-            print("Connected to BLE sensor")
+        self.startPCtime = 0
+        self.disconnect = False
+        self._conn_id = 0
+        self._ble_disconnected = False
 
-            # Send maxi version
-            version = b"v7.0.3"
-            await client.write_gatt_char(BLE_UUID_MAXI_VERSION, version, response=True)
-            print(f"Maxi version sent: {version.decode('utf-8')}")
+        start_time = time.time()
 
-            # Send configuration
-            await client.write_gatt_char(
-                BLE_UUID_PHYLING,
-                BLE_NOTIF_NANO_SEND_CONFIG + bytes(ujson.dumps(self.config), "utf-8"),
-            )
-            print(f"Configuration sent: {self.config}")
+        while not self.disconnect:
+            if duration is not None and time.time() - start_time >= duration:
+                break
 
-            version = await client.read_gatt_char(BLE_UUID_VERSION)
-            print(f"Sensor version: {version.decode('utf-8')}")
+            self._ble_disconnected = False
+            self.startBLETime = 0
+            self.startPCtime = 0
 
-            # Enable notifications on the data characteristic
-            await client.start_notify(BLE_UUID_PHYLING, self._notification_handler)
-            print("Notifications enabled")
+            try:
+                async with BleakClient(
+                    self.address,
+                    disconnected_callback=lambda __: setattr(
+                        self, "_ble_disconnected", True
+                    ),
+                ) as client:
+                    print(f"[{self.get_name()}] Device {self.name} Connected")
 
-            # Start recording
-            await client.write_gatt_char(BLE_UUID_PHYLING, BLE_NOTIF_START_REC)
-            print("Recording started")
+                    version = b"v7.0.3"
+                    await client.write_gatt_char(
+                        BLE_UUID_MAXI_VERSION, version, response=True
+                    )
 
-            # Wait for notifications until interruption
-            signal.signal(signal.SIGINT, self._signal_handler)
-            signal.signal(signal.SIGTERM, self._signal_handler)
+                    await client.write_gatt_char(
+                        BLE_UUID_PHYLING,
+                        BLE_NOTIF_NANO_SEND_CONFIG
+                        + bytes(ujson.dumps(self.config), "utf-8"),
+                    )
 
-            while not self.disconnect:
-                if (
-                    duration is not None
-                    and self.startRecordTime > 0
-                    and time.time() - self.startRecordTime > duration
-                ):
-                    self.disconnect = True
-                    print(f"Stopping recording after {duration} seconds")
+                    await client.read_gatt_char(BLE_UUID_VERSION)
+
+                    await client.start_notify(
+                        BLE_UUID_PHYLING, self._notification_handler
+                    )
+
+                    await client.write_gatt_char(BLE_UUID_PHYLING, BLE_NOTIF_START_REC)
+                    print(f"[{self.get_name()}] Recording started")
+
+                    while not self.disconnect and not self._ble_disconnected:
+                        if (
+                            duration is not None
+                            and time.time() - start_time >= duration
+                        ):
+                            self.disconnect = True
+                            break
+                        await asyncio.sleep(0.1)
+
+                    if not self._ble_disconnected:
+                        try:
+                            await client.write_gatt_char(
+                                BLE_UUID_PHYLING, BLE_NOTIF_STOP_REC
+                            )
+                            await client.stop_notify(BLE_UUID_PHYLING)
+                        except Exception:
+                            pass
+
+                print(f"[{self.get_name()}] Recording stopped ({self.nbDatas} samples)")
+
+                if self._ble_disconnected and not self.disconnect:
+                    print(
+                        f"[{self.get_name()}] Unexpected disconnect. Reconnecting in 1s..."
+                    )
+                    self._conn_id += 1
+                    await asyncio.sleep(1.0)
+
+            except (asyncio.CancelledError, KeyboardInterrupt):
+                self.disconnect = True
+            except Exception as e:
+                if self.disconnect:
                     break
-                else:
-                    await asyncio.sleep(0.1)
-
-            # Stop recording before exiting
-            await client.write_gatt_char(BLE_UUID_PHYLING, BLE_NOTIF_STOP_REC)
-            print("Recording stopped")
-            await client.stop_notify(BLE_UUID_PHYLING)
-            print("Notifications stopped")
-            print(
-                f"Number of recorded data: {self.nbDatas}, use NanoPhyling.get_df() to retrieve them"
-            )
+                print(
+                    f"[{self.get_name()}] Connection error: {e}. Reconnecting in 1s..."
+                )
+                self._conn_id += 1
+                await asyncio.sleep(1.0)
 
     def run(self, duration: Union[int, None] = None) -> None:
         """
         Run the BLE client to connect to the device and start recording data.
-        This function handles the connection, configuration, and data recording.
 
-        :param duration: Duration in seconds to record data (default: None, record indefinitely, kill to stop)
+        :param duration: Duration in seconds to record data (default: None, record indefinitely)
         """
         self.disconnect = False
         if not self.address:
             self.address = find_device(name=self.name)
         if not self.address:
             print(
-                "Unable to find BLE sensor. Make sure it is turned on and within range."
+                f"[{self.get_name()}] Device not found. Make sure it is turned on and within range."
             )
             return
-        asyncio.run(self._run_ble_client(duration))
+        try:
+            asyncio.run(self._run_ble_client(duration))
+        except KeyboardInterrupt:
+            print(f"[{self.get_name()}] Recording interrupted.")
+        finally:
+            self._apply_sync()
 
-    def calibrate_gyro(self) -> dict:
+    async def _calibrate_gyro_async(self) -> dict:
         """
+        Async version of calibrate_gyro() for use with asyncio.gather in PhylingDevices.
         Calculates gyroscope bias by averaging 5 seconds of stationary data.
-        Stores offsets in the instance to automatically zero-center future measurements.
         """
-
-        self.disconnect = False
-        if not self.address:
-            self.address = find_device(name=self.name)
-
-        print("Calibration : Do not touch the Nano for 5 secondes...")
+        print(
+            f"[{self.get_name()}] Calibration: do not touch the device for 5 seconds..."
+        )
 
         old_gyro_offsets = self.gyro_offsets
         self.gyro_offsets = {"x": 0.0, "y": 0.0, "z": 0.0}
 
-        asyncio.run(self._run_ble_client(5))
+        await self._run_ble_client(5)
 
         try:
             self.gyro_offsets = {
@@ -284,26 +386,29 @@ class NanoPhyling:
                 "y": float(self.df["gyro_y"].mean()),
                 "z": float(self.df["gyro_z"].mean()),
             }
-            print(f"Calibration passed. New offsets : {self.gyro_offsets}")
+            print(f"[{self.get_name()}] Calibration done. Offsets: {self.gyro_offsets}")
         except KeyError:
-            print("Error : columns gyro_x/y/z not found.")
+            print(
+                f"[{self.get_name()}] Calibration error: columns gyro_x/y/z not found."
+            )
             self.gyro_offsets = old_gyro_offsets
 
-        print(
-            "To apply these offsets in future recordings, pass them to the NanoPhyling constructor:\n"
-            f"\tNanoPhyling(..., gyro_offsets={self.gyro_offsets})"
-        )
-
         return self.gyro_offsets
+
+    def calibrate_gyro(self) -> dict:
+        """
+        Calculates gyroscope bias by averaging 5 seconds of stationary data.
+        Stores offsets in the instance to automatically zero-center future measurements.
+        """
+        self.disconnect = False
+        if not self.address:
+            self.address = find_device(name=self.name)
+
+        return asyncio.run(self._calibrate_gyro_async())
 
     def get_df(self) -> DataFrame:
         """
         Get the DataFrame containing the recorded data.
-        :return: DataFrame with recorded data
+        :return: DataFrame with columns: T, time, <data_cols>, fs
         """
         return self.df
-
-
-if __name__ == "__main__":
-    nano = NanoPhyling(name=sys.argv[1])
-    nano.run()

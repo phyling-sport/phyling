@@ -454,14 +454,22 @@ class PhylingAPI:
                 - range: [x-start, x-end] (only for range type). [] to select all
                 - num: the num of the selection if you want to select a selection (range is computed automatically)
                 - maxData: the max number of points to return. If there are more points, a lttb is applied
+                - normalize: (optional, bool) if True, offsets the data so the selection starts at 0
+                - user_offset: (optional, float) additional offset applied to x values (default 0.0)
+                - x_sub_range: (optional, [float, float]) sub-range in normalized (display) coordinates
             y:
                 - list of the data to select. For example: ["imu.acc_x", "imu.acc_y" ]
+            slot_id: (optional, int) arbitrary slot identifier echoed back in the response
+            label: (optional, str) arbitrary label echoed back in the response
 
         response range format: (for each data selection)
             xrange: Can contains D, T and x ranges
                 - D: [D-start, D-end] (only if distance is available)
                 - T: [T-start, T-end]
                 - x: [x-start, x-end] -> x is the selected range type (T or D)
+            selectionNum: the selection num if the type was selection, else null
+            slot_id: echoed from the request if provided
+            label: echoed from the request if provided
             data: dict of the selected data with the following format:
                 "imu.acc_x": {
                     "id": 0,
