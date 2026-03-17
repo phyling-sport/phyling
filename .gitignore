@@ -137,3 +137,4 @@ venv
 .pypirc
 test.json
 example_data.json
+example_data.csv

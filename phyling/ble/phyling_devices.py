@@ -5,7 +5,7 @@ from typing import Union
 import pandas as pd
 from bleak import BleakScanner
 
-from phyling.phyling_utils import fuse_data
+from phyling.decoder.decoder import fuse_data
 
 
 class PhylingDevices:
