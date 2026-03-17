@@ -1,5 +1,9 @@
 import logging
 import os
+from typing import Dict
+from typing import List
+from typing import Optional
+from typing import Union
 
 import numpy as np
 import pandas as pd
@@ -86,8 +90,8 @@ def getTypeGraph(valType: str) -> str:
 
 def interp1d_(
     df: pd.DataFrame,
-    cols: list[str],
-    t_int: None | np.ndarray = None,
+    cols: List[str],
+    t_int: Optional[np.ndarray] = None,
     fs: float = 1,
     keep_type: bool = True,
     kind: str = "linear",
@@ -141,8 +145,8 @@ def interp1d_(
 def fuse_data(
     df1: pd.DataFrame,
     df2: pd.DataFrame,
-    cols1: str | list[str] = "all",
-    cols2: str | list[str] = "all",
+    cols1: Union[str, List[str]] = "all",
+    cols2: Union[str, List[str]] = "all",
     prefix1: str = "",
     prefix2: str = "",
     fs: float = 1.0,
@@ -242,7 +246,7 @@ def fuse(
     modules: list,
     output_fs: float,
     prefix: bool = False,
-    t0: dict | None = None,
+    t0: Optional[dict] = None,
     x: str = "T",
 ) -> pd.DataFrame:
     """Performs fusion of DataFrames at a given sampling rate.
@@ -309,7 +313,7 @@ def get_module_rate(data: dict, module: str) -> float:
     return fs
 
 
-def get_rate(data: dict, modules: str | list[str]) -> dict[str, float]:
+def get_rate(data: dict, modules: Union[str, List[str]]) -> Dict[str, float]:
     """Gets the sampling rates of the input modules.
 
     Parameters:
@@ -382,7 +386,9 @@ def datamodule2df(data: dict, module: str) -> pd.DataFrame:
     return df
 
 
-def data2df(data: dict, modules: str | list[str] = "all") -> dict[str, pd.DataFrame]:
+def data2df(
+    data: dict, modules: Union[str, List[str]] = "all"
+) -> Dict[str, pd.DataFrame]:
     """Convert data object from Maxi-Phyling to dataframe(s).
 
     Parameters:
@@ -403,7 +409,7 @@ def data2df(data: dict, modules: str | list[str] = "all") -> dict[str, pd.DataFr
     return res
 
 
-def json2csv(data: dict, output_fs: float | None = None) -> pd.DataFrame:
+def json2csv(data: dict, output_fs: Optional[float] = None) -> pd.DataFrame:
     """Process record data.
 
     Parameters:
