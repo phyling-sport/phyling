@@ -81,11 +81,45 @@ cdef dict sizeElemDict = {
     "int64": 8,
     "float32": 4,
     "float64": 8,
+    # array32_float32
+    # array32x32_int16
 }
 
+cpdef dict getArrayInfo(str valType):
+    cdef dict info = {
+        "dim1": 0,
+        "dim2": 0,
+        "elemType": "",
+        "elemSize": 0,
+        "totalSize": 0,
+    }
+
+    if valType.startswith("array"):
+        match = re.match(r"array(\d+)x(\d+)_(\w+)", valType)
+        if match:
+            info["dim1"] = int(match.group(1))
+            info["dim2"] = int(match.group(2))
+            info["elemType"] = match.group(3)
+            info["elemSize"] = getSizeElem(info["elemType"])
+            info["totalSize"] = info["dim1"] * info["dim2"] * info["elemSize"]
+            return info
+        match = re.match(r"array(\d+)_(\w+)", valType)
+        if match:
+            info["dim1"] = int(match.group(1))
+            info["dim2"] = 0
+            info["elemType"] = match.group(2)
+            info["elemSize"] = getSizeElem(info["elemType"])
+            info["totalSize"] = info["dim2"] * info["elemSize"]
+            return info
+    raise Exception("Invalid type: {}, must be arrayA_<type> or arrayAxB_<type>".format(valType))
+
 cpdef unsigned int getSizeElem(str valType):
+    cdef dict arrayInfo
+
     if valType in sizeElemDict:
         return sizeElemDict[valType]
+    if valType.startswith("array"):
+        return getArrayInfo(valType)["totalSize"]
     raise Exception("Invalid type: {}".format(valType))
 
 
@@ -96,11 +130,21 @@ cpdef str getTypeElem(str valType):
         return "int"
     if valType.startswith("float"):
         return "float"
-    raise Exception("Invalid type: {}, must be uintX, intX or floatX".format(valType))
+    if valType.startswith("array"):
+        return "array"
+    raise Exception("Invalid type: {}, must be uintX, intX, floatX, arrayA_<type>, arrayAxB_<type>".format(valType))
 
 
 cpdef object getElem(char * content, int curPos, str valType, int content_size=0):
     cdef int size = getSizeElem(valType)
+
+    # For array types
+    cdef dict arrayInfo
+    cdef list array = []
+    cdef list row = []
+    cdef int x, y
+    cdef int offset = 0
+
     if content_size > 0 and curPos + size > content_size:
         raise Exception("File is broken, unpack requires a buffer of {} bytes".format(size))
     if getTypeElem(valType) == "uint":
@@ -121,6 +165,19 @@ cpdef object getElem(char * content, int curPos, str valType, int content_size=0
                 "<f" if size == 4 else "<d", content[curPos : curPos + size]  # noqa
             )[0]
         )
+    if getTypeElem(valType) == "array":
+        arrayInfo = getArrayInfo(valType)
+        for x in range(arrayInfo["dim1"]):
+            if arrayInfo["dim2"] == 0:
+                array.append(getElem(content, curPos + offset, arrayInfo["elemType"], content_size))
+                offset += arrayInfo["elemSize"]
+            else:
+                row = []
+                for y in range(arrayInfo["dim2"]):
+                    row.append(getElem(content, curPos + offset, arrayInfo["elemType"], content_size))
+                    offset += arrayInfo["elemSize"]
+                array.append(row)
+        return array
 
 
 cpdef object applyFactor(object value, object curMod, object elem):
@@ -187,6 +244,8 @@ cpdef bint filterValTooHighBeforeCalib(object curMod, object modValNamed, object
     for key, val in modValNamed.items():
         if val == "T":
             continue
+        if not isinstance(modVal[val], (int, float)):
+            continue
 
         if curMod["type"] == "adc" or curMod["type"] == "analog":
             if modVal[val] < 0 or modVal[val] > 25:
@@ -202,10 +261,12 @@ cpdef bint filterValTooHighBeforeCalib(object curMod, object modValNamed, object
 
 
 cpdef bint filterValTooHighAfterCalib(object curMod, object modValNamed, object modVal, str curModName):
-    errValTooHIGH = False
     for key, val in modValNamed.items():
         if val == "T":
             continue
+        if not isinstance(modVal[val], (int, float)):
+            continue
+
         maxval = 10**10 if val != "gpstimeUs" else 10**16  # year 2286 in us
         if abs(modVal[val]) > maxval:
             logSpam.warning(f"Max value reached {curModName}[{val}] = {modVal[val]}")
@@ -243,6 +304,10 @@ cpdef bint filterValTooHighAfterCalib(object curMod, object modValNamed, object 
                 return False
             if val == "PDOP" and (modVal[val] < 0 or modVal[val] > 300):
                 logSpam.warning(f"Max value reached {curModName}[{val}] = {modVal[val]}")
+                return False
+            # remove values that are exactly 0. This tell that there is no GPS data
+            if val in ("nSat", "PDOP", "longitude", "latitude") and modVal[val] == 0:
+                logSpam.warning(f"Value is 0 {curModName}[{val}] = {modVal[val]} - gps not connected")
                 return False
     return True
 
@@ -356,11 +421,15 @@ cpdef object loadOne(dict header, char * content, int curPos, dict calib_dict=No
     return data, missingByteSize + curMod["size"], modTime / 1000000
 
 
-cpdef object getCalibration(str filename):
+cpdef object getCalibration(str filename, use_s3=True):
     cdef object calibration = ""
     cdef str type = ""
     cdef bytes ln
-    cdef bytes filecontent = S3.get_file_bytes(filename)
+    cdef bytes filecontent
+    if use_s3:
+        filecontent = S3.get_file_bytes(filename)
+    else:
+        filecontent = get_file_bytes_local(filename)
     for ln in filecontent.splitlines(True):
         if ln == b"":
             break
@@ -382,11 +451,14 @@ cpdef object getCalibration(str filename):
     return calibration
 
 
-cpdef object updateCalibration(str filename, str oldFilename, object calibration):
+cpdef object updateCalibration(str filename, str oldFilename, object calibration, use_s3=True):
     cdef str type = ""
     cdef bytes ln
-    cdef bytes filecontent = S3.get_file_bytes(filename)
-
+    cdef bytes filecontent
+    if use_s3:
+        filecontent = S3.get_file_bytes(filename)
+    else:
+        filecontent = get_file_bytes_local(filename)
     if not S3.file_exists(oldFilename):
         logging.info(f"Save a copy of file in {oldFilename}")
         S3.copy_file(filename, oldFilename)
@@ -511,6 +583,8 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
     for modName in header["modules"].keys():
         stats[modName] = 0
     cdef double lastTime = 0
+    cdef bint isMini = header["description"]["deviceType"] == "miniphyling"
+    cdef dict last_gps_data = {}  # last saved GPS values per module (keyed by module_name)
     cdef int dev_id = header["description"]["deviceId"]
 
     cdef int percent
@@ -562,6 +636,15 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
         stats[module_name] += 1
         curPos += size
 
+        # GPS deduplication: skip if no GPS values changed since last point
+        if newData["type"] == "gps" and isMini:
+            new_gps_vals = {}
+            for k, v in newData["data"].items():
+                if k != "T":
+                    new_gps_vals[k] = v
+            if module_name in last_gps_data and new_gps_vals == last_gps_data[module_name]:
+                continue
+            last_gps_data[module_name] = new_gps_vals
         # if first data saving
         if module_name not in jsonData["modules"]:
             jsonData["modules"][module_name] = {
@@ -569,12 +652,12 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
                 "data": {},
                 "data_info": {},
             }
-            cols = ["rate", "name"]
+            cols = ["rate", "type", "name", "bleName"]  # cols to copy in description
             for col in cols:
                 if col in header["modules"][module_name]:
                     jsonData["modules"][module_name]["description"][col] = header["modules"][module_name][col]
             jsonData["modules"][module_name]["data"]["T"] = []
-            jsonData["modules"][module_name]["data_info"]["T"] = {"unit": "s", "description": ""}
+            jsonData["modules"][module_name]["data_info"]["T"] = {"unit": "s", "description": "", "type": "number"}
             description = header["modules"][module_name]["description"]
             for i in range(2, len(description)):
                 realVarName = getVarName(header, module_name, description[i]["name"])
@@ -585,9 +668,14 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
                             "description"
                         ]
                 jsonData["modules"][module_name]["data"][realVarName] = []
-                jsonData["modules"][module_name]["data_info"][
-                    realVarName
-                ] = {"unit": description[i]["unit"], "description": descr}
+
+                jsonData["modules"][module_name]["data_info"][realVarName] = {
+                    "description": descr
+                }
+                cols = ["unit", "type", "min", "max"]  # cols to copy in data_info (for each data column)
+                for col in cols:
+                    if col in description[i]:
+                        jsonData["modules"][module_name]["data_info"][realVarName][col] = description[i][col]
 
         # save data
         if timeSec > lastTime:

@@ -414,6 +414,192 @@ class PhylingAPI:
         }
         return res
 
+    def get_record(
+        self,
+        rec_id: int,
+    ):
+        """Get a record from the API
+
+        Args:
+            rec_id (int): The record ID
+        Returns:
+            Record: The record object
+        """
+        res = self.GET(
+            url=f"/records/{rec_id}",
+        )
+        if not res:
+            return None
+        if res.status != 200:
+            return None
+        response_data = ujson.loads(res.data)
+        return Record(api=self, desc=response_data)
+
+    def get_record_data(
+        self,
+        request_args: dict,
+        describe_response: bool = False,
+    ):
+        """
+        Get some decoded data for plotting
+        You can select multiple range of data on multiples records in the same request.
+        The response contains a dict with all records and all data selections for each record in the same order.
+
+        The list of the data that can be selected can be optained with `GET /records/<rec_id>` (available_data field).
+        ```
+        data range params: (for each data selection)
+            x:
+                - type: range or selection
+                - name: the name of the x axis (for example T or D)
+                - range: [x-start, x-end] (only for range type). [] to select all
+                - num: the num of the selection if you want to select a selection (range is computed automatically)
+                - maxData: the max number of points to return. If there are more points, a lttb is applied
+                - normalize: (optional, bool) if True, offsets the data so the selection starts at 0
+                - user_offset: (optional, float) additional offset applied to x values (default 0.0)
+                - x_sub_range: (optional, [float, float]) sub-range in normalized (display) coordinates
+            y:
+                - list of the data to select. For example: ["imu.acc_x", "imu.acc_y" ]
+            slot_id: (optional, int) arbitrary slot identifier echoed back in the response
+            label: (optional, str) arbitrary label echoed back in the response
+
+        response range format: (for each data selection)
+            xrange: Can contains D, T and x ranges
+                - D: [D-start, D-end] (only if distance is available)
+                - T: [T-start, T-end]
+                - x: [x-start, x-end] -> x is the selected range type (T or D)
+            selectionNum: the selection num if the type was selection, else null
+            slot_id: echoed from the request if provided
+            label: echoed from the request if provided
+            data: dict of the selected data with the following format:
+                "imu.acc_x": {
+                    "id": 0,
+                    "label": "imu.acc_x",  # name of the data
+                    "title": "imu.acc_x",  # title (to display on the plot for example)
+                    "data": [{"x": 2.79, "y": 0.123}, {"x": 2.80, "y": 0.125}, ...],
+                    "yRange": [ymin, ymax],  # if set, the y range to apply on the plot
+                    "color": "#ff0000",  # if set, the color to use for the plot
+                    "type": "number"  # can be number, array32x32, etc.
+                },
+                ...
+        ```
+
+
+        Example of request body for 2 selection in a single record:
+        POST /records/data {
+            "data": {
+                "818": [
+                    {
+                        "x": {
+                            "type": "range",
+                            "name": "T",
+                            "range": [ 10, 30 ],
+                            "maxData": 5
+                        },
+                        "y": [ "imu.acc_x","imu.acc_y","imu.acc_z" ]
+                    },
+                    {
+                        "x": {
+                            "type": "range",
+                            "name": "T",
+                            "range": [],
+                            "maxData": 5
+                        },
+                        "y": [ "imu.acc_x" ]
+                    }
+                ]
+            }
+        }
+        >> response
+        {
+            "data": {
+                "818": [
+                    {
+                        "data": {
+                            "imu.acc_x": {
+                                "color": null,
+                                "data": [ { "x": 10.001, "y": 0.24262 }, ..., { "x": 29.996, "y": 0.27987 } ],
+                                "id": 0,
+                                "label": "imu.acc_x",
+                                "title": "imu.acc_x",
+                                "type": "number",
+                                "yRange": []
+                            },
+                            "imu.acc_y": {
+                                "color": null,
+                                "data": [ { "x": 10.001, "y": 0.0446 }, ..., { "x": 29.996, "y": -0.0094 } ],
+                                "id": 1,
+                                "label": "imu.acc_y",
+                                "title": "imu.acc_y",
+                                "type": "number",
+                                "yRange": []
+                            },
+                            "imu.acc_z": {
+                                "color": null,
+                                "data": [ { "x": 10.001, "y": 9.67984 }, ..., { "x": 29.996, "y": 9.62028 } ],
+                                "id": 2,
+                                "label": "imu.acc_z",
+                                "title": "imu.acc_z",
+                                "type": "number",
+                                "yRange": []
+                            }
+                        },
+                        "xrange": {
+                            "D": [],
+                            "T": [ 10, 29.995 ],
+                            "x": [ 10, 29.995 ]
+                        },
+                        "selectionNum": null
+                    },
+                    {
+                        "data": {
+                            "imu.acc_x": {
+                                "color": null,
+                                "data": [ { "x": 2.791, "y": 0.25851 }, ..., { "x": 58.786, "y": 0.32502 } ],
+                                "id": 0,
+                                "label": "imu.acc_x",
+                                "title": "imu.acc_x",
+                                "type": "number",
+                                "yRange": []
+                            }
+                        },
+                        "xrange": {
+                            "D": [],
+                            "T": [ 2.79, 58.795 ],
+                            "x": [ 2.79, 58.795 ]
+                        },
+                        "selectionNum": null
+                    }
+                ]
+            }
+        }
+        """
+        res = self.POST(
+            url="/records/data",
+            body=ujson.dumps(request_args),
+        )
+        if not res:
+            return None
+        if res.status != 200:
+            return None
+        data = ujson.loads(res.data)
+        if describe_response:
+            for rec_id, selections in data["data"].items():
+                print(f"Record ID: {rec_id}")
+                for idx, selection in enumerate(selections):
+                    print(f"  Selection {idx}:")
+                    print("    xrange:")
+                    for range_item in selection["xrange"]:
+                        print(f"      {range_item}: {selection['xrange'][range_item]}")
+                    print("    data:")
+                    for key, value in selection["data"].items():
+                        print(f"      {key}:")
+                        for k, v in value.items():
+                            if k == "data":
+                                continue
+                            print(f"        {k}: {v}")
+                        print(f"        data: [{len(value['data'])} points]")
+        return data
+
     def download_record(
         self,
         rec_id: int,

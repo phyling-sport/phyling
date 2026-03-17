@@ -3,6 +3,7 @@
 Minimal OAuth + realtime example for Phyling.
 
 Installation et exécution :
+> Lors de la création, mettre en callback http://localhost:2000/callback dans la liste des redirect URIs de l'app OAuth dans Phyling
 > pip install -r requirements.txt
 > python minimal_oauth.py --api-url https://api.app.phyling.fr --port 2000 --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET --device-number 10300042
 
