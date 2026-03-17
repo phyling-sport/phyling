@@ -22,8 +22,9 @@ Cette partie regroupe plusieurs exemples :
 ### Décoder un fichier brut Phyling
 - `phyling/examples/Analyse/decoder.ipynb` : notebook qui charge un enregistrement `.txt` brut, décrit les trames disponibles et les convertit en tableaux/pandas exploitables pour vos analyses.
 
-### Récupérer les données d'un NanoPhyling
-- `examples/Nano-Phyling/nanophyling.ipynb` : notebook qui se connecte à un Nano-Phyling, fait une acquisition de X secondes puis affiche les données
+### Récupérer les données d'un MiniPhyling ou d'un NanoPhyling
+- `examples/NanoPhyling-MiniPhyling/single_device.ipynb` : notebook qui se connecte à un seul Mini-Phyling ou Nano-Phyling, fait une acquisition puis affiche les données
+- `examples/NanoPhyling-MiniPhyling/multi_devices.ipynb` : notebook qui se connecte à plusieurs devices en parallèle et fusionne les acquisitions
 
 ### Se connecter à l'API Phyling
 La documentation de l'API Phyling est disponible ici : [docs.phyling.fr/api](https://docs.phyling.fr/api/)

@@ -37,27 +37,68 @@ class PhylingDevices:
         discovered_map = {dev.name: dev.address for dev in discovered if dev.name}
 
         for device in needs_scan:
-            if device.name in discovered_map:
-                device.address = discovered_map[device.name]
-                print(f"Found: {device.name} ({device.address})")
+            if device.ble_name in discovered_map:
+                device.address = discovered_map[device.ble_name]
+                print(f"Found: {device.ble_name} ({device.address})")
             else:
-                print(f"Device not found: {device.name}")
+                print(f"Device not found: {device.ble_name}")
 
-    def calibrate_gyro(self) -> None:
+    def get_calib(self) -> dict:
+        """Return the full calibration dict indexed by device name."""
+        return {d.get_name(): d.get_calib() for d in self.devices}
+
+    def reset_calib(self) -> None:
+        """Reset calibration to default for all devices."""
+        for device in self.devices:
+            device.reset_calib()
+
+    def set_calib(self, calib: dict) -> None:
         """
-        Calibrate all devices simultaneously (parallel BLE connections).
-        All devices must remain stationary for ~5 seconds.
+        Set calibration for each device by name.
+
+        :param calib: Dict of {device_name: {column: {"coef": float, "offset": float}}}
+        """
+        for device in self.devices:
+            if device.get_name() in calib:
+                device.set_calib(calib[device.get_name()])
+
+    def update_calib(self, calib: dict) -> None:
+        """
+        Merge a partial calibration dict into each device's calibration.
+
+        :param calib: Dict of {device_name: {column: {"coef": float, "offset": float}}}
+        """
+        for device in self.devices:
+            if device.get_name() in calib:
+                device.update_calib(calib[device.get_name()])
+
+    async def _tare_async(self, tare_dict: dict) -> None:
+        tasks = []
+        for device in self.devices:
+            columns = tare_dict.get(device.get_name(), [])
+            if columns:
+                tasks.append(device._tare_async(columns))
+        if tasks:
+            await asyncio.gather(*tasks)
+
+    def tare(self, tare_dict: dict) -> None:
+        """
+        Zero-center columns on specific devices by recording 5 seconds of stationary data.
+        Runs all devices in parallel. The existing df of each device is preserved.
+
+        :param tare_dict: Dict of {device_name: [col1, col2, ...]}
+                          e.g. {"mini-42": ["adc_0", "mag_z"], "nano-07": ["gyro_z"]}
         """
         self._scan_all()
-        missing = [d.name for d in self.devices if not d.address]
+        missing = [
+            d.ble_name
+            for d in self.devices
+            if d.get_name() in tare_dict and not d.address
+        ]
         if missing:
-            print(f"Cannot calibrate — devices not found: {missing}")
+            print(f"Cannot tare — devices not found: {missing}")
             return
-
-        print(
-            "Calibrating all devices simultaneously — do not touch any device for 5 seconds..."
-        )
-        asyncio.run(asyncio.gather(*(d._calibrate_gyro_async() for d in self.devices)))
+        asyncio.run(self._tare_async(tare_dict))
 
     def run(self, duration: Union[int, None] = None) -> None:
         """
@@ -68,7 +109,7 @@ class PhylingDevices:
         :param duration: Duration in seconds. None = record until interrupted.
         """
         self._scan_all()
-        missing = [d.name for d in self.devices if not d.address]
+        missing = [d.ble_name for d in self.devices if not d.address]
         if missing:
             print(f"Cannot run — devices not found: {missing}")
             return
@@ -108,6 +149,14 @@ class PhylingDevices:
         # Exclude metadata columns from fuse_data (handled separately)
         def data_cols(df):
             return [c for c in df.columns if c not in ("T", "time")]
+
+        if len(self.devices) == 1:
+            fused = dfs[0].copy()
+            data_columns = data_cols(fused)
+            fused = fused.rename(columns={c: f"{names[0]}.{c}" for c in data_columns})
+            if drop_nan:
+                fused = fused.dropna()
+            return fused.reset_index(drop=True)
 
         fused = fuse_data(
             dfs[0],
@@ -158,6 +207,6 @@ class PhylingDevices:
         :return: Device instance
         """
         for device in self.devices:
-            if device.name == name:
+            if device.get_name() == name:
                 return device
         raise ValueError(f"Device '{name}' not found in PhylingDevices.")
