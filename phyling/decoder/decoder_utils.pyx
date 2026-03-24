@@ -577,7 +577,11 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
     setup_header(header)
     logging.info("start decoding file")
     cdef int curPos = 0
-    cdef dict jsonData = {"modules": {}}
+    cdef dict jsonData = {
+        "modules": {},
+        "description": {},
+        "calib": calibration,
+    }
     cdef int statsAll = 0
     cdef dict stats = {}
     for modName in header["modules"].keys():
