@@ -84,13 +84,24 @@ def calibration(data, module, calib):
         offset = value["offset"] if "offset" in value else None
         if key in mapper:
             if key == "adc":
-                # We have 2 possible sets of column names for adc
-                cols1 = ["adc_0", "adc_1", "adc_2"]
-                cols2 = ["0", "1", "2"]
-                if all([col in data for col in cols1]):
-                    mapper[key] = cols1
-                elif all([col in data for col in cols2]):
-                    mapper[key] = cols2
+                mapper[key] = []
+                # create mapper for the 3 first ADC cols
+                # adc_0, adc_1, adc_2 or 0, 1, 2 depending on data format
+                for col in sorted(data.keys()):
+                    if col.startswith("adc_"):
+                        mapper[key].append(col)
+                    else:
+                        try:
+                            int(col)  # check if col is `0`, `1`, `2`, etc.
+                            mapper[key].append(col)
+                        except ValueError:
+                            pass
+                    if len(mapper[key]) == 3:
+                        break
+                if len(mapper[key]) != 3:
+                    raise ValueError(
+                        f"Calibration3D: Cannot find 3 columns for adc calibration in data: {data.keys()}"
+                    )
             data = calibration_3D(data, mapper[key], coef, offset)
         elif key in data and "texisense_calib_base64" in calib[module][key]:
             data[key] = calib_texisense.apply_texisense_calibration(
