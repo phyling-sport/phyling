@@ -79,6 +79,8 @@ def calibration(data, module, calib):
     for key, value in calib[module].items():
         if key == "high_range_gyro":
             continue
+        if type(value) is not dict:
+            continue  # ignore for example for algo params
 
         coef = value["coef"] if "coef" in value else None
         offset = value["offset"] if "offset" in value else None
