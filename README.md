@@ -12,6 +12,16 @@ Installez depuis les sources :
 pip install -e .
 ```
 
+### Prérequis Windows
+
+Le package contient une extension Cython qui nécessite un compilateur C++. Sur Windows, deux outils sont requis avant d'installer :
+
+1. **Git pour Windows** : https://git-scm.com/download/win
+2. **Microsoft C++ Build Tools** : https://visualstudio.microsoft.com/visual-cpp-build-tools/
+   - Dans l'installateur, cocher **"Développement Desktop en C++"**
+
+Relancer ensuite `pip install -e .` dans un nouveau terminal après l'installation.
+
 ## Exemples
 
 Cette partie regroupe plusieurs exemples :
