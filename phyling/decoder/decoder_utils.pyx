@@ -461,13 +461,13 @@ cpdef object updateCalibration(str filename, str oldFilename, object calibration
         filecontent = get_file_bytes_local(filename)
     if not S3.file_exists(oldFilename):
         logging.info(f"Save a copy of file in {oldFilename}")
-        S3.copy_file(filename, oldFilename)
+        S3.copy_file(filename, oldFilename, use_s3=use_s3)
 
     pattern = rb"<== calibration ==>\n(.*?)<== data ==>\n"
     replacement = f"<== calibration ==>\n{ujson.dumps(calibration, 4)}\n<== data ==>\n".encode()
     filecontent = re.sub(pattern, replacement, filecontent, flags=re.DOTALL)
 
-    S3.add_file_bytes(filename, filecontent)
+    S3.add_file_bytes(filename, filecontent, use_s3=use_s3)
 
 
 cpdef object loadFile(str filename, bint verbose=False, double startingTime=-1, bint use_s3=True, object record=None):
