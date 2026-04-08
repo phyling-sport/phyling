@@ -40,7 +40,7 @@ class NanoPhyling(BaseDevice):
 
     async def _setup_config(self, client: BleakClient) -> None:
         """Send version and config JSON to the device, then build _col_specs."""
-        await client.write_gatt_char(BLE_UUID_MAXI_VERSION, b"v7.0.3", response=True)
+        await client.write_gatt_char(BLE_UUID_MAXI_VERSION, b"v7.0.4", response=True)
         await client.write_gatt_char(
             BLE_UUID_PHYLING,
             BLE_NOTIF_NANO_SEND_CONFIG + bytes(ujson.dumps(self.config), "utf-8"),
