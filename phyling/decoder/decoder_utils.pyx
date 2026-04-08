@@ -1,10 +1,12 @@
 import re
+import os
 import struct
 import logging
 import ujson
 import time
 import datetime
 from packaging import version
+import shutil
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -456,18 +458,32 @@ cpdef object updateCalibration(str filename, str oldFilename, object calibration
     cdef bytes ln
     cdef bytes filecontent
     if use_s3:
-        filecontent = S3.get_file_bytes(filename)
+        filecontent = S3.get_file_bytes(filename, use_s3=use_s3)
+
+        if not S3.file_exists(oldFilename, use_s3=use_s3):
+            logging.info(f"Save a copy of file in {oldFilename}")
+            S3.copy_file(filename, oldFilename, use_s3=use_s3)
+
+        pattern = rb"<== calibration ==>\n(.*?)<== data ==>\n"
+        replacement = f"<== calibration ==>\n{ujson.dumps(calibration, 4)}\n<== data ==>\n".encode()
+        filecontent = re.sub(pattern, replacement, filecontent, flags=re.DOTALL)
+
+        S3.add_file_bytes(filename, filecontent, use_s3=use_s3)
+
     else:
         filecontent = get_file_bytes_local(filename)
-    if not S3.file_exists(oldFilename):
-        logging.info(f"Save a copy of file in {oldFilename}")
-        S3.copy_file(filename, oldFilename, use_s3=use_s3)
 
-    pattern = rb"<== calibration ==>\n(.*?)<== data ==>\n"
-    replacement = f"<== calibration ==>\n{ujson.dumps(calibration, 4)}\n<== data ==>\n".encode()
-    filecontent = re.sub(pattern, replacement, filecontent, flags=re.DOTALL)
+        if not os.path.exists(oldFilename):
+            logging.info(f"Save a copy of file in {oldFilename}")
 
-    S3.add_file_bytes(filename, filecontent, use_s3=use_s3)
+            shutil.copyfile(filename, oldFilename)
+
+        pattern = rb"<== calibration ==>\n(.*?)<== data ==>\n"
+        replacement = f"<== calibration ==>\n{ujson.dumps(calibration, 4)}\n<== data ==>\n".encode()
+        filecontent = re.sub(pattern, replacement, filecontent, flags=re.DOTALL)
+
+        with open(filename, "wb") as f:
+            f.write(filecontent)
 
 
 cpdef object loadFile(str filename, bint verbose=False, double startingTime=-1, bint use_s3=True, object record=None):
