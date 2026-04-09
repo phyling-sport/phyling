@@ -33,3 +33,5 @@ just --justfile ../infra/justfile docker-restart cloud-simu-dev latest "celery m
 - **Linting :** Flake8
 - **Formatage :** Black
 - **Cython :** fichiers `.pyx` compilés en `.c` puis `.so`
+
+Voir `PhylingApp/CLAUDE.md` pour les conventions communes (imports, logs, docstrings).
