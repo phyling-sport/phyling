@@ -769,7 +769,7 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
     logging.info(f"Record started on {dt.strftime('%Y-%m-%d %H:%M:%S.%f')}. Time precision: {header['description']['timePrecisionUs'] / 1000:.3f}ms")
     logging.info("total: {} data".format(statsAll))
     for key, val in stats.items():
-        logging.info("\t{}: {} datas".format(key, val))
+        logging.info("  {}: {} datas".format(key, val))
     logging.info("<== decode end [{}] ==>".format("SUCCESS" if retSuccess else "ERROR"))
     logging.info("File decoded in {:.3f}s".format(time.time() - start))
     if record:
