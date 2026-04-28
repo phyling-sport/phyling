@@ -275,7 +275,7 @@ cpdef bint filterValTooHighAfterCalib(object curMod, object modValNamed, object 
         if not isinstance(modVal[val], (int, float)):
             continue
 
-        maxval = 10**10 if val != "gpstimeUs" else 10**16  # year 2286 in us
+        maxval = 10**10 if "time" not in val else 10**16  # year 2286 in us
         if abs(modVal[val]) > maxval:
             logSpam.warning(f"Max value reached {curModName}[{val}] = {modVal[val]}")
             return False
