@@ -1,3 +1,4 @@
+# cython: boundscheck=False, wraparound=False, cdivision=True, language_level=3
 import re
 import os
 import struct
@@ -87,6 +88,11 @@ cdef dict sizeElemDict = {
     # array32x32_int16
 }
 
+# Pre-compiled regex patterns for array type parsing (avoid recompilation on every call)
+_RE_ARRAY_2D = re.compile(r"array(\d+)x(\d+)_(\w+)")
+_RE_ARRAY_1D = re.compile(r"array(\d+)_(\w+)")
+
+
 cpdef dict getArrayInfo(str valType):
     cdef dict info = {
         "dim1": 0,
@@ -97,7 +103,7 @@ cpdef dict getArrayInfo(str valType):
     }
 
     if valType.startswith("array"):
-        match = re.match(r"array(\d+)x(\d+)_(\w+)", valType)
+        match = _RE_ARRAY_2D.match(valType)
         if match:
             info["dim1"] = int(match.group(1))
             info["dim2"] = int(match.group(2))
@@ -105,7 +111,7 @@ cpdef dict getArrayInfo(str valType):
             info["elemSize"] = getSizeElem(info["elemType"])
             info["totalSize"] = info["dim1"] * info["dim2"] * info["elemSize"]
             return info
-        match = re.match(r"array(\d+)_(\w+)", valType)
+        match = _RE_ARRAY_1D.match(valType)
         if match:
             info["dim1"] = int(match.group(1))
             info["dim2"] = 0
@@ -241,8 +247,16 @@ cpdef void setup_header(dict header):
     header["__setup__"] = True
 
 
-cpdef bint filterValTooHighBeforeCalib(object curMod, object modValNamed, object modVal, str curModName):
-    errValTooHIGH = False
+DEF FILTER_KEEP = 1      # data is valid, keep it
+DEF FILTER_SKIP = 0      # expected/normal skip (e.g. no GPS fix), not an error
+DEF FILTER_ERROR = -1    # value out of valid range, likely corrupted
+
+
+cpdef int filterValTooHighBeforeCalib(object curMod, object modValNamed, object modVal, str curModName):
+    """Filter decoded module values before calibration.
+
+    Returns FILTER_KEEP (1), FILTER_SKIP (0), or FILTER_ERROR (-1).
+    """
     for key, val in modValNamed.items():
         if val == "T":
             continue
@@ -252,66 +266,70 @@ cpdef bint filterValTooHighBeforeCalib(object curMod, object modValNamed, object
         if curMod["type"] == "adc" or curMod["type"] == "analog":
             if modVal[val] < 0 or modVal[val] > 25:
                 logSpam.warning(f"Max value reached {curModName}[{val}] = {modVal[val]} (before calibration)")
-                return False
+                return FILTER_ERROR
 
         elif curMod["type"] in ("miniphyling", "nanophyling", "ble"):
             if val.startswith("adc_"):
                 if modVal[val] < 0 or modVal[val] > 25:
                     logSpam.warning(f"Max value reached {curModName}[{val}] = {modVal[val]} (before calibration)")
-                    return False
-    return True
+                    return FILTER_ERROR
+    return FILTER_KEEP
 
 
-cpdef bint filterValTooHighAfterCalib(object curMod, object modValNamed, object modVal, str curModName):
+cpdef int filterValTooHighAfterCalib(object curMod, object modValNamed, object modVal, str curModName):
+    """Filter decoded module values after calibration.
+
+    Returns FILTER_KEEP (1), FILTER_SKIP (0), or FILTER_ERROR (-1).
+    FILTER_SKIP is used for expected missing data (e.g. GPS module with no fix).
+    """
     for key, val in modValNamed.items():
         if val == "T":
             continue
         if not isinstance(modVal[val], (int, float)):
             continue
 
-        maxval = 10**10 if val != "gpstimeUs" else 10**16  # year 2286 in us
+        maxval = 10**10 if "time" not in val else 10**16  # year 2286 in us
         if abs(modVal[val]) > maxval:
             logSpam.warning(f"Max value reached {curModName}[{val}] = {modVal[val]}")
-            return False
+            return FILTER_ERROR
 
         if val.startswith("acc_"):
             if abs(modVal[val]) > 600.0:
                 logSpam.warning(f"Max value reached {curModName}[{val}] = {modVal[val]}")
-                return False
+                return FILTER_ERROR
 
         elif val.startswith("gyro_"):
             if abs(modVal[val]) > 5000.0:
                 logSpam.warning(f"Max value reached {curModName}[{val}] = {modVal[val]}")
-                return False
+                return FILTER_ERROR
 
         elif val.startswith("mag_"):
             if abs(modVal[val]) > 100.0:
                 logSpam.warning(f"Max value reached {curModName}[{val}] = {modVal[val]}")
-                return False
+                return FILTER_ERROR
 
         elif curMod["type"] == "polar":
             if val == "HeartBeat" and (modVal[val] < 0 or modVal[val] > 300):
                 logSpam.warning(f"Max value reached {curModName}[{val}] = {modVal[val]}")
-                return False
+                return FILTER_ERROR
             if val == "SensorContact" and (modVal[val] < -1 or modVal[val] > 1):
                 logSpam.warning(f"Max value reached {curModName}[{val}] = {modVal[val]}")
-                return False
+                return FILTER_ERROR
 
         elif curMod["type"] == "gps":
             if val in ("longitude", "latitude") and (modVal[val] < -200 or modVal[val] > 200):
                 logSpam.warning(f"Max value reached {curModName}[{val}] = {modVal[val]}")
-                return False
+                return FILTER_ERROR
             if val == "speed" and (modVal[val] < 0 or modVal[val] > 1000):
                 logSpam.warning(f"Max value reached {curModName}[{val}] = {modVal[val]}")
-                return False
+                return FILTER_ERROR
             if val == "PDOP" and (modVal[val] < 0 or modVal[val] > 300):
                 logSpam.warning(f"Max value reached {curModName}[{val}] = {modVal[val]}")
-                return False
-            # remove values that are exactly 0. This tell that there is no GPS data
+                return FILTER_ERROR
+            # GPS values at 0 mean no fix yet — expected, not an error
             if val in ("nSat", "PDOP", "longitude", "latitude") and modVal[val] == 0:
-                logSpam.warning(f"Value is 0 {curModName}[{val}] = {modVal[val]} - gps not connected")
-                return False
-    return True
+                return FILTER_SKIP
+    return FILTER_KEEP
 
 
 cpdef object loadOne(dict header, char * content, int curPos, dict calib_dict=None, int content_size=0, bint check_higher_values=True):
@@ -324,9 +342,10 @@ cpdef object loadOne(dict header, char * content, int curPos, dict calib_dict=No
     cdef int tmpCurPos = curPos
 
     setup_header(header)  # create all variables if needed
-    missingByteSize = 0
+    missingByteSize = 0   # corrupted/unreadable bytes — triggers warning
+    skippedByteSize = 0   # expected skips (e.g. GPS no fix) — no warning
     while content_size == 0 or tmpCurPos < content_size:
-        tmpCurPos = curPos + missingByteSize
+        tmpCurPos = curPos + missingByteSize + skippedByteSize
         curModName = getModName(header, content, tmpCurPos)
         if curModName == "":
             if content_size == 0:
@@ -342,12 +361,6 @@ cpdef object loadOne(dict header, char * content, int curPos, dict calib_dict=No
                 logSpam.warning(f"[Time recalibration] Epoch is not valid ({epochUs / 1e6}s)")
                 missingByteSize += 1
                 continue
-            if header["description"]["epoch"] > 1420070400:
-                # if recalibration is for more than 7 days, cancel it
-                if epochUs / 1e6 < header["description"]["epoch"] - 604800 or epochUs / 1e6 > header["description"]["epoch"] + 604800:
-                    logSpam.warning(f"[Time recalibration] Epoch is not valid ({epochUs / 1e6}s), cannot recalibrate more than 7 days")
-                    missingByteSize += 1
-                    continue
             if not HEADER_UPDATE_DICT in header:
                 header[HEADER_UPDATE_DICT] = {}
             header[HEADER_UPDATE_DICT]["epochUs"] = epochUs
@@ -360,7 +373,7 @@ cpdef object loadOne(dict header, char * content, int curPos, dict calib_dict=No
                 msg = f"Missing some data ({missingByteSize} bytes from position {curPos}) (Before time calibration module)"
                 logSpam.warning(msg)
             newData, size, timeSec = loadOne(header, content, tmpCurPos + TIME_MODULE_SIZE, calib_dict, content_size)
-            return newData, size + missingByteSize + TIME_MODULE_SIZE, timeSec
+            return newData, size + missingByteSize + skippedByteSize + TIME_MODULE_SIZE, timeSec
 
         curMod = header['modules'][curModName]
         if content_size > 0 and tmpCurPos + curMod["size"] > content_size:
@@ -390,14 +403,24 @@ cpdef object loadOne(dict header, char * content, int curPos, dict calib_dict=No
                 continue
             modValNamed["T"] = "T"
 
-            if check_higher_values and not filterValTooHighBeforeCalib(curMod, modValNamed, modVal, curModName):  # filter high values
-                missingByteSize += 1
-                continue
+            if check_higher_values:
+                beforeCalibResult = filterValTooHighBeforeCalib(curMod, modValNamed, modVal, curModName)
+                if beforeCalibResult == FILTER_SKIP:
+                    skippedByteSize += curMod["size"]
+                    continue
+                elif beforeCalibResult == FILTER_ERROR:
+                    missingByteSize += 1
+                    continue
             if calib_dict is not None and calib_dict != {}:
                 modVal = calib.calibration(modVal, curModName, calib_dict)
-            if check_higher_values and not filterValTooHighAfterCalib(curMod, modValNamed, modVal, curModName):  # filter high values
-                missingByteSize += 1
-                continue
+            if check_higher_values:
+                afterCalibResult = filterValTooHighAfterCalib(curMod, modValNamed, modVal, curModName)
+                if afterCalibResult == FILTER_SKIP:
+                    skippedByteSize += curMod["size"]
+                    continue
+                elif afterCalibResult == FILTER_ERROR:
+                    missingByteSize += 1
+                    continue
 
             for key, val in modValNamed.items():
                 modValNamed[key] = modVal[val]
@@ -412,15 +435,93 @@ cpdef object loadOne(dict header, char * content, int curPos, dict calib_dict=No
                 raise Exception(f"Error on decoding: {str(e)}")
             logSpam.warning(f"Error on decoding: {str(e)}. trying next module")
             missingByteSize += 1
-    if data:
-        msg = f"Missing some data ({missingByteSize} bytes at {modVal['T']}s)"
-    else:
-        msg = f"Missing some data ({missingByteSize} bytes from position {curPos})"
-    if missingByteSize > 0:  # if we have lost some data
+    if missingByteSize > 0:
+        if data:
+            msg = f"Missing some data ({missingByteSize} bytes at {modVal.get('T', '?')}s)"
+        else:
+            msg = f"Missing some data ({missingByteSize} bytes from position {curPos})"
         logSpam.warning(msg)
-        if not data:  # if it's impossible to decode some data
+        if not data:
             raise Exception(msg)
-    return data, missingByteSize + curMod["size"], modTime / 1000000
+    return data, missingByteSize + skippedByteSize + curMod["size"], modTime / 1000000
+
+
+cdef object _round_value(object val, int decimals):
+    """Round a scalar float or every element of a list/nested list to the given number of decimals.
+
+    Non-float numerics (e.g. numpy int64) are converted to float before rounding to ensure
+    JSON serializability, matching the behaviour of utils.roundAll.
+    """
+    cdef object item
+    if isinstance(val, float):
+        return round(val, decimals)
+    if isinstance(val, list):
+        return [_round_value(item, decimals) for item in val]
+    try:
+        return round(float(val), decimals)
+    except (TypeError, ValueError):
+        return val
+
+
+cpdef list loadAll(dict header, bytes content, int curPos=5, dict calib_dict=None,
+                   bint check_higher_values=True, bint round_values=False, int round_decimals=6):
+    """Decode all frames from an MQTT payload in a single C-level loop.
+
+    Iterates over the full payload and calls loadOne for each frame.
+    If round_values is True, numeric values in data["data"] are rounded before being
+    appended to the result list (T is rounded to 3 decimals, all others to round_decimals).
+    Handles scalar floats, lists, and nested lists.
+
+    Args:
+        header: Record description dict (recDescription).
+        content: Raw MQTT payload bytes.
+        curPos: Starting byte offset (default 5 = SOCKET_HEADER_SIZE).
+        calib_dict: Calibration dict, or None/empty to skip calibration.
+        check_higher_values: If True, filter out out-of-range values.
+        round_values: If True, round numeric values before appending to result.
+        round_decimals: Number of decimal places for rounding (default 6). T is always
+                        rounded to 3 decimals regardless of this value.
+
+    Returns:
+        List of (data, size, timestamp) tuples for each successfully decoded frame.
+    """
+    cdef int len_content = len(content)
+    cdef list results = []
+    cdef object data
+    cdef int size
+    cdef double timestamp
+    cdef str elem_key
+    cdef object elem_val
+
+    while curPos < len_content:
+        try:
+            data, size, timestamp = loadOne(
+                header=header,
+                content=content,
+                curPos=curPos,
+                calib_dict=calib_dict,
+                check_higher_values=check_higher_values,
+            )
+        except EndOfFileException:
+            # Corrupted end-of-file frame: stop iteration gracefully
+            break
+        except Exception:
+            # Corrupted frame: skip one byte and try to re-sync
+            curPos += 1
+            continue
+
+        curPos += size
+
+        if round_values:
+            for elem_key in list(data["data"].keys()):
+                elem_val = data["data"][elem_key]
+                data["data"][elem_key] = _round_value(
+                    elem_val, 3 if elem_key == "T" else round_decimals
+                )
+
+        results.append((data, size, timestamp))
+
+    return results
 
 
 cpdef object getCalibration(str filename, use_s3=True):
@@ -637,7 +738,7 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
         if content_size <= curPos:
             break
         if content[curPos] == 0:  # id for stopping parsing
-            percent = round(curPos / len(content) * 100)
+            percent = round(<double>curPos / content_size * 100)
             if percent > 95:
                 break
             logSpam.warning("Current module ID is 0, skipping")
@@ -706,7 +807,7 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
             )
 
         if statsAll % 10000 == 0:
-            percent = round(curPos / len(content) * 100)
+            percent = round(<double>curPos / content_size * 100)
             printDecodingInfos(statsAll, percent, verbose=verbose, record=record)
 
         logSpam.update()
@@ -762,7 +863,7 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
         jsonData["description"]["TZ"] = header["description"]["TZ"]
 
     if verbose:
-        percent = round(curPos / len(content) * 100)
+        percent = round(<double>curPos / content_size * 100)
         printDecodingInfos(statsAll, percent, verbose=verbose, record=record)
 
     dt = datetime.datetime.fromtimestamp(header["description"]["epochUs"] / float(1e6))

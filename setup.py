@@ -11,6 +11,12 @@ setup(
                 ["phyling/decoder/decoder_utils.pyx"],
                 include_dirs=[numpy.get_include()],
             )
-        ]
+        ],
+        compiler_directives={
+            "boundscheck": False,
+            "wraparound": False,
+            "cdivision": True,
+            "language_level": "3",
+        },
     )
 )
