@@ -821,9 +821,9 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
         except Exception as e:
             msg = f"Error in mini_processing for mod {mod}: {e}"
             if record:
-                record.add_error_msg(msg)
+                record.add_warn_msg(msg)
             else:
-                logging.error(msg)
+                logging.warning(msg)
 
         # High range gyro processing
         if calibration is not None and mod in calibration and "high_range_gyro" in calibration[mod]:
@@ -832,9 +832,9 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
             except Exception as e:
                 msg = f"Error in high_range_gyro for mod {mod}: {e}"
                 if record:
-                    record.add_error_msg(msg)
+                    record.add_warn_msg(msg)
                 else:
-                    logging.error(msg)
+                    logging.warning(msg)
 
     # update some parameters in description (like epoch or time precision)
     if HEADER_UPDATE_DICT in header:

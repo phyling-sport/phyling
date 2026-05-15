@@ -244,7 +244,7 @@ def time_correction(bleTime, notifTime, fs):
         f"Time correction v1 with linear regression t_corr = {m}t + {c} (R^2 = {r2})"
     )
     if r2 < 0.999:
-        logging.error("Time regression is not good enough, no correction applied ...")
+        logging.warning("Time regression is not good enough, no correction applied ...")
         return t_ble
 
     t_ble_corr = m * t_ble + c
