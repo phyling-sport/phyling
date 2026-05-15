@@ -247,8 +247,16 @@ cpdef void setup_header(dict header):
     header["__setup__"] = True
 
 
-cpdef bint filterValTooHighBeforeCalib(object curMod, object modValNamed, object modVal, str curModName):
-    errValTooHIGH = False
+DEF FILTER_KEEP = 1      # data is valid, keep it
+DEF FILTER_SKIP = 0      # expected/normal skip (e.g. no GPS fix), not an error
+DEF FILTER_ERROR = -1    # value out of valid range, likely corrupted
+
+
+cpdef int filterValTooHighBeforeCalib(object curMod, object modValNamed, object modVal, str curModName):
+    """Filter decoded module values before calibration.
+
+    Returns FILTER_KEEP (1), FILTER_SKIP (0), or FILTER_ERROR (-1).
+    """
     for key, val in modValNamed.items():
         if val == "T":
             continue
@@ -258,17 +266,22 @@ cpdef bint filterValTooHighBeforeCalib(object curMod, object modValNamed, object
         if curMod["type"] == "adc" or curMod["type"] == "analog":
             if modVal[val] < 0 or modVal[val] > 25:
                 logSpam.warning(f"Max value reached {curModName}[{val}] = {modVal[val]} (before calibration)")
-                return False
+                return FILTER_ERROR
 
         elif curMod["type"] in ("miniphyling", "nanophyling", "ble"):
             if val.startswith("adc_"):
                 if modVal[val] < 0 or modVal[val] > 25:
                     logSpam.warning(f"Max value reached {curModName}[{val}] = {modVal[val]} (before calibration)")
-                    return False
-    return True
+                    return FILTER_ERROR
+    return FILTER_KEEP
 
 
-cpdef bint filterValTooHighAfterCalib(object curMod, object modValNamed, object modVal, str curModName):
+cpdef int filterValTooHighAfterCalib(object curMod, object modValNamed, object modVal, str curModName):
+    """Filter decoded module values after calibration.
+
+    Returns FILTER_KEEP (1), FILTER_SKIP (0), or FILTER_ERROR (-1).
+    FILTER_SKIP is used for expected missing data (e.g. GPS module with no fix).
+    """
     for key, val in modValNamed.items():
         if val == "T":
             continue
@@ -278,46 +291,45 @@ cpdef bint filterValTooHighAfterCalib(object curMod, object modValNamed, object 
         maxval = 10**10 if "time" not in val else 10**16  # year 2286 in us
         if abs(modVal[val]) > maxval:
             logSpam.warning(f"Max value reached {curModName}[{val}] = {modVal[val]}")
-            return False
+            return FILTER_ERROR
 
         if val.startswith("acc_"):
             if abs(modVal[val]) > 600.0:
                 logSpam.warning(f"Max value reached {curModName}[{val}] = {modVal[val]}")
-                return False
+                return FILTER_ERROR
 
         elif val.startswith("gyro_"):
             if abs(modVal[val]) > 5000.0:
                 logSpam.warning(f"Max value reached {curModName}[{val}] = {modVal[val]}")
-                return False
+                return FILTER_ERROR
 
         elif val.startswith("mag_"):
             if abs(modVal[val]) > 100.0:
                 logSpam.warning(f"Max value reached {curModName}[{val}] = {modVal[val]}")
-                return False
+                return FILTER_ERROR
 
         elif curMod["type"] == "polar":
             if val == "HeartBeat" and (modVal[val] < 0 or modVal[val] > 300):
                 logSpam.warning(f"Max value reached {curModName}[{val}] = {modVal[val]}")
-                return False
+                return FILTER_ERROR
             if val == "SensorContact" and (modVal[val] < -1 or modVal[val] > 1):
                 logSpam.warning(f"Max value reached {curModName}[{val}] = {modVal[val]}")
-                return False
+                return FILTER_ERROR
 
         elif curMod["type"] == "gps":
             if val in ("longitude", "latitude") and (modVal[val] < -200 or modVal[val] > 200):
                 logSpam.warning(f"Max value reached {curModName}[{val}] = {modVal[val]}")
-                return False
+                return FILTER_ERROR
             if val == "speed" and (modVal[val] < 0 or modVal[val] > 1000):
                 logSpam.warning(f"Max value reached {curModName}[{val}] = {modVal[val]}")
-                return False
+                return FILTER_ERROR
             if val == "PDOP" and (modVal[val] < 0 or modVal[val] > 300):
                 logSpam.warning(f"Max value reached {curModName}[{val}] = {modVal[val]}")
-                return False
-            # remove values that are exactly 0. This tell that there is no GPS data
+                return FILTER_ERROR
+            # GPS values at 0 mean no fix yet — expected, not an error
             if val in ("nSat", "PDOP", "longitude", "latitude") and modVal[val] == 0:
-                logSpam.warning(f"Value is 0 {curModName}[{val}] = {modVal[val]} - gps not connected")
-                return False
-    return True
+                return FILTER_SKIP
+    return FILTER_KEEP
 
 
 cpdef object loadOne(dict header, char * content, int curPos, dict calib_dict=None, int content_size=0, bint check_higher_values=True):
@@ -330,9 +342,10 @@ cpdef object loadOne(dict header, char * content, int curPos, dict calib_dict=No
     cdef int tmpCurPos = curPos
 
     setup_header(header)  # create all variables if needed
-    missingByteSize = 0
+    missingByteSize = 0   # corrupted/unreadable bytes — triggers warning
+    skippedByteSize = 0   # expected skips (e.g. GPS no fix) — no warning
     while content_size == 0 or tmpCurPos < content_size:
-        tmpCurPos = curPos + missingByteSize
+        tmpCurPos = curPos + missingByteSize + skippedByteSize
         curModName = getModName(header, content, tmpCurPos)
         if curModName == "":
             if content_size == 0:
@@ -348,12 +361,6 @@ cpdef object loadOne(dict header, char * content, int curPos, dict calib_dict=No
                 logSpam.warning(f"[Time recalibration] Epoch is not valid ({epochUs / 1e6}s)")
                 missingByteSize += 1
                 continue
-            if header["description"]["epoch"] > 1420070400:
-                # if recalibration is for more than 7 days, cancel it
-                if epochUs / 1e6 < header["description"]["epoch"] - 604800 or epochUs / 1e6 > header["description"]["epoch"] + 604800:
-                    logSpam.warning(f"[Time recalibration] Epoch is not valid ({epochUs / 1e6}s), cannot recalibrate more than 7 days")
-                    missingByteSize += 1
-                    continue
             if not HEADER_UPDATE_DICT in header:
                 header[HEADER_UPDATE_DICT] = {}
             header[HEADER_UPDATE_DICT]["epochUs"] = epochUs
@@ -366,7 +373,7 @@ cpdef object loadOne(dict header, char * content, int curPos, dict calib_dict=No
                 msg = f"Missing some data ({missingByteSize} bytes from position {curPos}) (Before time calibration module)"
                 logSpam.warning(msg)
             newData, size, timeSec = loadOne(header, content, tmpCurPos + TIME_MODULE_SIZE, calib_dict, content_size)
-            return newData, size + missingByteSize + TIME_MODULE_SIZE, timeSec
+            return newData, size + missingByteSize + skippedByteSize + TIME_MODULE_SIZE, timeSec
 
         curMod = header['modules'][curModName]
         if content_size > 0 and tmpCurPos + curMod["size"] > content_size:
@@ -396,14 +403,24 @@ cpdef object loadOne(dict header, char * content, int curPos, dict calib_dict=No
                 continue
             modValNamed["T"] = "T"
 
-            if check_higher_values and not filterValTooHighBeforeCalib(curMod, modValNamed, modVal, curModName):  # filter high values
-                missingByteSize += 1
-                continue
+            if check_higher_values:
+                beforeCalibResult = filterValTooHighBeforeCalib(curMod, modValNamed, modVal, curModName)
+                if beforeCalibResult == FILTER_SKIP:
+                    skippedByteSize += curMod["size"]
+                    continue
+                elif beforeCalibResult == FILTER_ERROR:
+                    missingByteSize += 1
+                    continue
             if calib_dict is not None and calib_dict != {}:
                 modVal = calib.calibration(modVal, curModName, calib_dict)
-            if check_higher_values and not filterValTooHighAfterCalib(curMod, modValNamed, modVal, curModName):  # filter high values
-                missingByteSize += 1
-                continue
+            if check_higher_values:
+                afterCalibResult = filterValTooHighAfterCalib(curMod, modValNamed, modVal, curModName)
+                if afterCalibResult == FILTER_SKIP:
+                    skippedByteSize += curMod["size"]
+                    continue
+                elif afterCalibResult == FILTER_ERROR:
+                    missingByteSize += 1
+                    continue
 
             for key, val in modValNamed.items():
                 modValNamed[key] = modVal[val]
@@ -418,15 +435,15 @@ cpdef object loadOne(dict header, char * content, int curPos, dict calib_dict=No
                 raise Exception(f"Error on decoding: {str(e)}")
             logSpam.warning(f"Error on decoding: {str(e)}. trying next module")
             missingByteSize += 1
-    if data:
-        msg = f"Missing some data ({missingByteSize} bytes at {modVal['T']}s)"
-    else:
-        msg = f"Missing some data ({missingByteSize} bytes from position {curPos})"
-    if missingByteSize > 0:  # if we have lost some data
+    if missingByteSize > 0:
+        if data:
+            msg = f"Missing some data ({missingByteSize} bytes at {modVal.get('T', '?')}s)"
+        else:
+            msg = f"Missing some data ({missingByteSize} bytes from position {curPos})"
         logSpam.warning(msg)
-        if not data:  # if it's impossible to decode some data
+        if not data:
             raise Exception(msg)
-    return data, missingByteSize + curMod["size"], modTime / 1000000
+    return data, missingByteSize + skippedByteSize + curMod["size"], modTime / 1000000
 
 
 cdef object _round_value(object val, int decimals):
