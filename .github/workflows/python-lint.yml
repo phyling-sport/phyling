@@ -3,6 +3,9 @@ name: python-lint
 on:
   pull_request:
     branches: [ "**" ]
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
     python-lint:
