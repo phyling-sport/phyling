@@ -251,9 +251,10 @@ DEF FILTER_KEEP = 1      # data is valid, keep it
 DEF FILTER_SKIP = 0      # expected/normal skip (e.g. no GPS fix), not an error
 DEF FILTER_ERROR = -1    # value out of valid range, likely corrupted
 
-DEF GPS_OK = 0           # GPS values usable (or no GPS fields) — keep frame unchanged
-DEF GPS_SANITIZED = 1    # combined module: invalid GPS fields set to NaN in place (other data kept)
-DEF GPS_DROP = 2         # standalone GPS module: whole frame should be dropped (GPS-only frame)
+DEF GPS_OK = 0              # GPS values usable (or no GPS fields) — keep frame unchanged
+DEF GPS_SANITIZED = 1       # combined module: invalid GPS fields set to NaN in place (other data kept)
+DEF GPS_DROP_NOFIX = 2      # standalone GPS module: no fix (expected) — whole frame dropped silently
+DEF GPS_DROP_CORRUPTED = 3  # standalone GPS module: out-of-range values — whole frame dropped, counts as error
 
 
 cpdef int filterValTooHighBeforeCalib(object curMod, object modValNamed, object modVal, str curModName):
@@ -332,12 +333,12 @@ cpdef int sanitizeGpsFields(object curMod, object modVal, str curModName):
 
     Works for both naming schemes:
       - standalone "gps" modules (Maxi GpsModule, raw Mini file) use bare names ("latitude", ...).
-        The whole frame is GPS-only, so there is nothing else to keep -> the frame is dropped
-        (returns GPS_DROP; the caller skips it).
+        The whole frame is GPS-only, so there is nothing else to keep -> the frame is dropped.
+        Returns GPS_DROP_NOFIX (expected no-fix) or GPS_DROP_CORRUPTED (out-of-range values).
       - combined modules (miniphyling / nanophyling / ble) bundle IMU + GPS in one frame with
-        "gps_"-prefixed names. Dropping the frame would discard the valid 200 Hz IMU data, so we
-        invalidate ONLY the GPS position/quality fields in place (-> NaN, returns GPS_SANITIZED)
-        while keeping nSat as the validity flag.
+        "gps_"-prefixed names. Dropping the frame would discard the valid high-frequency IMU data,
+        so we invalidate ONLY the GPS position/quality fields in place (-> NaN, returns GPS_SANITIZED)
+        while zeroing nSat (signals no-fix to downstream consumers).
 
     NaN is the platform-wide "missing GPS" representation (interpolation produces a gap instead of
     a teleport, and the map renderer keeps NaN). Modifies modVal in place in the combined case.
@@ -346,15 +347,19 @@ cpdef int sanitizeGpsFields(object curMod, object modVal, str curModName):
       - no-fix (nSat == 0, or lat == lon == 0): expected, silent.
       - out-of-range / corrupted values: warned.
 
-    Returns GPS_OK (valid / no GPS), GPS_SANITIZED (combined, NaN'd), or GPS_DROP (standalone).
+    Returns GPS_OK (valid / no GPS), GPS_SANITIZED (combined, NaN'd),
+    GPS_DROP_NOFIX (standalone, no fix), or GPS_DROP_CORRUPTED (standalone, corrupted).
     """
     cdef double nan = float("nan")
     cdef str prefix
-    if "gps_latitude" in modVal and "gps_longitude" in modVal:
-        prefix = "gps_"
-    elif "latitude" in modVal and "longitude" in modVal:
+    if curMod["type"] == "gps":
         prefix = ""
+    elif curMod["type"] in ("miniphyling", "nanophyling", "ble"):
+        prefix = "gps_"
     else:
+        return GPS_OK
+
+    if prefix + "latitude" not in modVal or prefix + "longitude" not in modVal:
         return GPS_OK
 
     lat = modVal[prefix + "latitude"]
@@ -363,23 +368,39 @@ cpdef int sanitizeGpsFields(object curMod, object modVal, str curModName):
     speed = modVal.get(prefix + "speed", None)
     pdop = modVal.get(prefix + "PDOP", None)
 
-    no_fix = (nsat is not None and nsat == 0) or (lat == 0 and lon == 0)
-    corrupted = (
-        lat < -90 or lat > 90
-        or lon < -180 or lon > 180
-        or (nsat is not None and nsat > 64)
-        or (speed is not None and (speed < 0 or speed > 1000))
-        or (pdop is not None and (pdop < 0 or pdop > 300))
-    )
+    # NaN inputs (e.g. already sanitized in a prior pass) are treated as no-fix.
+    if lat != lat or lon != lon:
+        no_fix = True
+        corrupted = False
+    else:
+        no_fix = (nsat is not None and nsat == 0) or (lat == 0 and lon == 0)
+        corrupted = (
+            lat < -90 or lat > 90
+            or lon < -180 or lon > 180
+            or (nsat is not None and nsat > 64)
+            or (speed is not None and (speed < 0 or speed > 1000))
+            or (pdop is not None and (pdop < 0 or pdop > 300))
+        )
     if not no_fix and not corrupted:
         return GPS_OK
 
     if corrupted:
-        logSpam.warning(f"Invalid GPS value in {curModName} (lat={lat}, lon={lon}, nSat={nsat})")
+        bad_fields = []
+        if lat < -90 or lat > 90:
+            bad_fields.append(f"lat={lat}")
+        if lon < -180 or lon > 180:
+            bad_fields.append(f"lon={lon}")
+        if nsat is not None and nsat > 64:
+            bad_fields.append(f"nSat={nsat}")
+        if speed is not None and (speed < 0 or speed > 1000):
+            bad_fields.append(f"speed={speed}")
+        if pdop is not None and (pdop < 0 or pdop > 300):
+            bad_fields.append(f"PDOP={pdop}")
+        logSpam.warning(f"Invalid GPS value in {curModName}: {', '.join(bad_fields)}")
 
     # Standalone GPS-only frame: nothing else to keep -> let the caller drop it.
     if prefix == "":
-        return GPS_DROP
+        return GPS_DROP_CORRUPTED if corrupted else GPS_DROP_NOFIX
 
     # Combined frame: keep the IMU data, invalidate only the GPS fields.
     for suffix in ("longitude", "latitude", "speed", "altitude", "PDOP", "heading"):
@@ -481,8 +502,12 @@ cpdef object loadOne(dict header, char * content, int curPos, dict calib_dict=No
                     continue
                 # Standalone "gps" frames (GPS-only) are dropped on invalid GPS; combined frames
                 # (e.g. miniphyling) keep their IMU and only NaN their GPS fields.
-                if sanitizeGpsFields(curMod, modVal, curModName) == GPS_DROP:
+                gps_result = sanitizeGpsFields(curMod, modVal, curModName)
+                if gps_result == GPS_DROP_NOFIX:
                     skippedByteSize += curMod["size"]
+                    continue
+                elif gps_result == GPS_DROP_CORRUPTED:
+                    missingByteSize += 1
                     continue
 
             for key, val in modValNamed.items():
