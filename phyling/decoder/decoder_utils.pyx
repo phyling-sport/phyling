@@ -476,11 +476,17 @@ cpdef object loadOne(dict header, char * content, int curPos, dict calib_dict=No
                     modVal[elem["name"]] = applyFactor(modVal[elem["name"]], curMod, elem)
                     modValNamed[varName] = elem["name"]
                 tmpCurPos += getSizeElem(elem["type"])
-            modVal["T"] = (modTime - header["description"]["epochUs"]) / 1000000  # time in seconds since rec start
-            if modVal["T"] > 3600 * 24 * 10 or modVal["T"] < -100:  # if time if over 10 days or in the past
-                missingByteSize += 1
-                continue
+            epochUs = header["description"]["epochUs"]
+            if epochUs == 0:  # stream outside record sentinel: no frozen epoch, T == absolute epoch, no clip
+                modVal["T"] = modTime / 1e6
+            else:
+                modVal["T"] = (modTime - epochUs) / 1000000  # time in seconds since rec start
+                if modVal["T"] > 3600 * 24 * 10 or modVal["T"] < -100:  # if time if over 10 days or in the past
+                    missingByteSize += 1
+                    continue
             modValNamed["T"] = "T"
+            modVal["epoch"] = modTime / 1e6  # absolute epoch time in seconds
+            modValNamed["epoch"] = "epoch"
 
             if check_higher_values:
                 beforeCalibResult = filterValTooHighBeforeCalib(curMod, modValNamed, modVal, curModName)
@@ -849,7 +855,7 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
         if newData["type"] == "gps" and isMini:
             new_gps_vals = {}
             for k, v in newData["data"].items():
-                if k != "T":
+                if k != "T" and k != "epoch":
                     new_gps_vals[k] = v
             if module_name in last_gps_data and new_gps_vals == last_gps_data[module_name]:
                 continue
@@ -890,6 +896,8 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
         if timeSec > lastTime:
             lastTime = timeSec
         for name in newData["data"].keys():
+            if name == "epoch":  # epoch is realtime-only, excluded from offline output
+                continue
             jsonData["modules"][newData["name"]]["data"][name].append(
                 newData["data"][name]
             )
