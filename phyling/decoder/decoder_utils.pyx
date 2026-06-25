@@ -263,7 +263,7 @@ cpdef int filterValTooHighBeforeCalib(object curMod, object modValNamed, object 
     Returns FILTER_KEEP (1), FILTER_SKIP (0), or FILTER_ERROR (-1).
     """
     for key, val in modValNamed.items():
-        if val == "T":
+        if val in ("T", "epoch"):
             continue
         if not isinstance(modVal[val], (int, float)):
             continue
@@ -289,7 +289,7 @@ cpdef int filterValTooHighAfterCalib(object curMod, object modValNamed, object m
     invalidates the GPS fields to NaN instead of dropping the frame (frames may carry valid IMU).
     """
     for key, val in modValNamed.items():
-        if val == "T":
+        if val in ("T", "epoch"):
             continue
         if not isinstance(modVal[val], (int, float)):
             continue
