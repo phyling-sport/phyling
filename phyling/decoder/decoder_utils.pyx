@@ -412,6 +412,13 @@ cpdef int sanitizeGpsFields(object curMod, object modVal, str curModName):
 
 
 cpdef object loadOne(dict header, char * content, int curPos, dict calib_dict=None, int content_size=0, bint check_higher_values=True):
+    """Decode a single frame at curPos and return (data, size, timestamp).
+
+    Each decoded frame carries two time columns: "T" and "epoch" (both in seconds).
+    "epoch" is always the absolute epoch time (modTime). "T" is relative to the record start,
+    except when header["description"]["epochUs"] == 0 (stream-outside-record sentinel): there is
+    no frozen record epoch, so T == epoch and the 10-day/past sanity clip is skipped.
+    """
     cdef str curModName
     cdef object curMod
     cdef double modTime
@@ -480,7 +487,7 @@ cpdef object loadOne(dict header, char * content, int curPos, dict calib_dict=No
             if epochUs == 0:  # stream outside record sentinel: no frozen epoch, T == absolute epoch, no clip
                 modVal["T"] = modTime / 1e6
             else:
-                modVal["T"] = (modTime - epochUs) / 1000000  # time in seconds since rec start
+                modVal["T"] = (modTime - epochUs) / 1e6  # time in seconds since rec start
                 if modVal["T"] > 3600 * 24 * 10 or modVal["T"] < -100:  # if time if over 10 days or in the past
                     missingByteSize += 1
                     continue
@@ -537,7 +544,7 @@ cpdef object loadOne(dict header, char * content, int curPos, dict calib_dict=No
         logSpam.warning(msg)
         if not data:
             raise Exception(msg)
-    return data, missingByteSize + skippedByteSize + curMod["size"], modTime / 1000000
+    return data, missingByteSize + skippedByteSize + curMod["size"], modTime / 1e6
 
 
 cdef object _round_value(object val, int decimals):
@@ -561,7 +568,9 @@ cpdef list loadAll(dict header, bytes content, int curPos=5, dict calib_dict=Non
                    bint check_higher_values=True, bint round_values=False, int round_decimals=6):
     """Decode all frames from an MQTT payload in a single C-level loop.
 
-    Iterates over the full payload and calls loadOne for each frame.
+    Iterates over the full payload and calls loadOne for each frame. Each frame's data carries
+    both the relative "T" column and the absolute "epoch" column (see loadOne); this realtime
+    path keeps "epoch" (unlike the offline decode output).
     If round_values is True, numeric values in data["data"] are rounded before being
     appended to the result list (T is rounded to 3 decimals, all others to round_decimals).
     Handles scalar floats, lists, and nested lists.
@@ -773,6 +782,11 @@ cpdef void printDecodingInfos(int statsAll, int percent, bint verbose=True, obje
 
 
 cpdef dict decode(str filename, bint verbose=True, dict config_client=None, object record=None, bint use_s3=True, bint check_higher_values=True):
+    """Decode a record file into a jsonData dict of modules.
+
+    The per-frame "epoch" column produced by loadOne is realtime-only and is excluded from this
+    offline output (only "T" and the regular data columns are kept).
+    """
     logging.info("<== decode start [{}] ==>".format(filename))
     cdef bint retSuccess = True
     cdef double start = time.time()
