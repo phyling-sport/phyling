@@ -340,9 +340,13 @@
       for (let attempt = 0; attempt < 30; attempt += 1) {
         await new Promise((r) => setTimeout(r, 1000));
         const resp = await apiFetchRaw(respPath, { method: 'POST', body: JSON.stringify({ id: rpcId }) });
-        if (resp.status !== 202) {
-          setSocketStatus(`Résultat reçu (HTTP ${resp.status}).`, 'success');
+        if (resp.status === 200) {
+          setSocketStatus('Résultat reçu.', 'success');
           return resp.body;
+        }
+        if (resp.status !== 202) { // 404 = expired id, 500 = command failed, etc.
+          setSocketStatus(`Échec de la commande (HTTP ${resp.status}).`, 'error');
+          throw new Error(`RPC failed HTTP ${resp.status}: ${JSON.stringify(resp.body)}`);
         }
       }
       throw new Error('Timeout en attente du résultat RPC.');

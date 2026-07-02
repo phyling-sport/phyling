@@ -2,6 +2,8 @@ import json
 import logging
 import time
 
+import urllib3
+
 from phyling import phyling_utils
 from phyling.api import PhylingAPI
 from phyling.api.phylingSocket import PhylingSocket
@@ -163,7 +165,7 @@ class PhylingRealtime:
         method: str,
         params: dict | None = None,
         timeout: float = -1,
-    ) -> dict:
+    ) -> urllib3.HTTPResponse | None:
         """Execute a command on a device (asynchronous, returns immediately)
         You need to send at least the method or the feature/cmd_type
         for example
@@ -204,7 +206,7 @@ class PhylingRealtime:
             ),
         )
 
-    def getRPCResponse(self, number: int, rpc_id: str) -> dict:
+    def getRPCResponse(self, number: int, rpc_id: str) -> urllib3.HTTPResponse | None:
         """Get the result of a command previously sent via executeRPC().
 
         Args:
@@ -215,7 +217,10 @@ class PhylingRealtime:
             200: The result of the command execution
             202: The command is still being processed
             400: Bad request (missing id)
+            401: Unauthorized (user not connected)
+            403: Forbidden (user does not have rights to access the device)
             404: Device not found, or unknown/expired request id
+            413: Payload too large (the command result is too large)
             500: Internal server error (command execution failed)
             503: Service unavailable (device is turning off, etc.)
         """
@@ -232,7 +237,7 @@ class PhylingRealtime:
         timeout: float = -1,
         poll_interval: float = 1.0,
         max_wait: float = 60.0,
-    ) -> dict:
+    ) -> urllib3.HTTPResponse | None:
         """Execute a command and wait for its result by polling /rpc/response.
 
         Sends the command with executeRPC(), then polls getRPCResponse() every
@@ -247,9 +252,10 @@ class PhylingRealtime:
             max_wait (float, optional): Maximum seconds to wait for the result.
 
         Returns:
-            The final HTTP response of getRPCResponse() (200 with the result), or the
-            immediate executeRPC() response if it already carried the result, or the
-            last 202 response if `max_wait` elapsed before completion.
+            The final getRPCResponse() response (200 with the result), or the immediate
+            executeRPC() response for any non-201 status (immediate result or error). If
+            `max_wait` elapses before the command completes, returns the last 202 response
+            (a warning is logged) — inspect `res.status` to distinguish a timeout.
         """
         res = self.executeRPC(number, method, params=params, timeout=timeout)
         if res.status != 201:
@@ -264,6 +270,9 @@ class PhylingRealtime:
             res = self.getRPCResponse(number, rpc_id)
             if res.status != 202:
                 return res
+        logging.warning(
+            f"executeRPCWait timed out after {max_wait}s waiting for RPC id {rpc_id}"
+        )
         return res
 
     """ --------------- Device realtime indicator --------------- """

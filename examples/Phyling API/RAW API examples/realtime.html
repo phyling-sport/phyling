@@ -1256,9 +1256,7 @@
       return { status: res.status, ok: res.ok, body };
     }
 
-    // Send a control RPC to a device via the REST API.
-    // The command is dispatched asynchronously: we poll /rpc/response once per second
-    // until the result is available.
+    // Send a control RPC to a device via the REST API (async: poll /rpc/response for the result).
     async function rpcRequest(deviceId, payload) {
       // payload = {
       //   feature: 'record',
@@ -1278,7 +1276,8 @@
       for (let attempt = 0; attempt < 30; attempt += 1) {
         await new Promise((r) => setTimeout(r, 1000));
         const resp = await apiFetchRaw(respPath, { method: 'POST', body: JSON.stringify({ id: rpcId }) });
-        if (resp.status !== 202) return resp.body;
+        if (resp.status === 200) return resp.body;
+        if (resp.status !== 202) throw new Error(`RPC failed HTTP ${resp.status}: ${JSON.stringify(resp.body)}`);
       }
       throw new Error('Timeout en attente du résultat RPC.');
     }
