@@ -1245,20 +1245,42 @@
       }
     }
 
+    // Like apiFetch but returns the HTTP status alongside the parsed body.
+    async function apiFetchRaw(path, opts = {}) {
+      const url = `${state.apiBase.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
+      const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+      if (state.authorization) headers['Authorization'] = state.authorization;
+      const res = await fetch(url, { ...opts, headers });
+      const ct = res.headers.get('content-type') || '';
+      const body = ct.includes('application/json') ? await res.json() : await res.text();
+      return { status: res.status, ok: res.ok, body };
+    }
+
     // Send a control RPC to a device via the REST API.
+    // The command is dispatched asynchronously: we poll /rpc/response once per second
+    // until the result is available.
     async function rpcRequest(deviceId, payload) {
       // payload = {
       //   feature: 'record',
       //   cmd_type: 'cmd_start',
       //   params: {},
       //   timeout: -1,
-      //   wait_for_result: true,
       // };
       if (!state.user || state.user.client_id == null) throw new Error('Non connecté');
       const clientId = state.user.client_id;
-      const path = `devices/rt/${clientId}/${deviceId}/rpc/request`;
+      const reqPath = `devices/rt/${clientId}/${deviceId}/rpc/request`;
       println(`RPC → ${deviceId} `, payload);
-      return apiFetch(path, { method: 'POST', body: JSON.stringify(payload) });
+      const req = await apiFetchRaw(reqPath, { method: 'POST', body: JSON.stringify(payload) });
+      if (!req.ok) throw new Error(`HTTP ${req.status}: ${JSON.stringify(req.body)}`);
+      const rpcId = req.body && req.body.id;
+      if (!rpcId) return req.body; // immediate result, nothing to poll
+      const respPath = `devices/rt/${clientId}/${deviceId}/rpc/response`;
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        await new Promise((r) => setTimeout(r, 1000));
+        const resp = await apiFetchRaw(respPath, { method: 'POST', body: JSON.stringify({ id: rpcId }) });
+        if (resp.status !== 202) return resp.body;
+      }
+      throw new Error('Timeout en attente du résultat RPC.');
     }
 
     // ============== Socket.IO ==============
@@ -1545,7 +1567,6 @@
                 feature: 'record',
                 cmd_type: 'cmd_start',
                 params: {},
-                wait_for_result: false,
               });
               println('RPC start OK', res);
             } catch (e) { println('RPC start ERR ' + e.message); }
@@ -1556,7 +1577,6 @@
                 feature: 'record',
                 cmd_type: 'cmd_stop',
                 params: {},
-                wait_for_result: false,
               });
               println('RPC stop OK', res);
             } catch (e) { println('RPC stop ERR ' + e.message); }
