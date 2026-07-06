@@ -62,8 +62,8 @@
 
     <section id="recordSection" hidden>
       <div class="actions">
-        <button class="ok" type="button" onclick="rpcRequest({feature:'record',cmd_type:'cmd_start',params:{},wait_for_result:false})">Start record</button>
-        <button class="danger" type="button" onclick="rpcRequest({feature:'record',cmd_type:'cmd_stop',params:{},wait_for_result:false})">Stop record</button>
+        <button class="ok" type="button" onclick="rpcRequest({feature:'record',cmd_type:'cmd_start',params:{}})">Start record</button>
+        <button class="danger" type="button" onclick="rpcRequest({feature:'record',cmd_type:'cmd_stop',params:{}})">Stop record</button>
       </div>
       <div id="socketState" class="status-line"></div>
     </section>
@@ -313,12 +313,43 @@
       renderStatusSummary();
     }
 
+    async function apiFetchRaw(path, opts = {}) {
+      const base = state.apiBase?.replace(/\/$/, '');
+      if (!base) throw new Error('Adresse API invalide.');
+      const url = `${base}/${String(path).replace(/^\//, '')}`;
+      const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+      if (state.authorization) headers['Authorization'] = state.authorization;
+      const res = await fetch(url, { ...opts, headers });
+      const isJson = (res.headers.get('content-type') || '').includes('application/json');
+      const body = isJson ? await res.json() : await res.text();
+      return { status: res.status, ok: res.ok, body };
+    }
+
     async function rpcRequest(payload) {
       if (!state.user) throw new Error('Non connecté');
       if (!state.deviceNumber) throw new Error('Device manquant');
-      const path = `/devices/rt/${state.user.client_id}/${state.deviceNumber}/rpc/request`;
-      await apiFetch(path, { method: 'POST', body: JSON.stringify(payload) });
+      const clientId = state.user.client_id;
+      const reqPath = `/devices/rt/${clientId}/${state.deviceNumber}/rpc/request`;
+      const req = await apiFetchRaw(reqPath, { method: 'POST', body: JSON.stringify(payload) });
+      if (!req.ok) throw new Error(`HTTP ${req.status} – ${JSON.stringify(req.body)}`);
       setSocketStatus(`Commande ${payload.cmd_type} envoyée.`, 'success');
+      const rpcId = req.body && req.body.id;
+      if (!rpcId) return req.body; // immediate result, nothing to poll
+      // poll /rpc/response once per second until the command result is available
+      const respPath = `/devices/rt/${clientId}/${state.deviceNumber}/rpc/response`;
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        await new Promise((r) => setTimeout(r, 1000));
+        const resp = await apiFetchRaw(respPath, { method: 'POST', body: JSON.stringify({ id: rpcId }) });
+        if (resp.status === 200) {
+          setSocketStatus('Résultat reçu.', 'success');
+          return resp.body;
+        }
+        if (resp.status !== 202) { // 404 = expired id, 500 = command failed, etc.
+          setSocketStatus(`Échec de la commande (HTTP ${resp.status}).`, 'error');
+          throw new Error(`RPC failed HTTP ${resp.status}: ${JSON.stringify(resp.body)}`);
+        }
+      }
+      throw new Error('Timeout en attente du résultat RPC.');
     }
 
     function ensureSocketConnected() {
