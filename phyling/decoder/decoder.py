@@ -335,6 +335,22 @@ def get_rate(data: dict, modules: Union[str, List[str]]) -> Dict[str, float]:
     return fs
 
 
+UNWANTED_CSV_VARS = ["bleTime", "notifDiff"]
+
+
+def drop_unwanted_csv_cols(df: pd.DataFrame) -> pd.DataFrame:
+    """Drop columns holding time-debug variables not wanted in exported CSV.
+
+    Parameters:
+        df (pd.DataFrame): input DataFrame.
+
+    Returns:
+        DataFrame without columns whose name contains an UNWANTED_CSV_VARS substring.
+    """
+    cols = [c for c in df.columns if any(v in c for v in UNWANTED_CSV_VARS)]
+    return df.drop(columns=cols)
+
+
 def rename_cols(col: str, module: str, sep: str = ".") -> str:
     """Change column name by adding module name.
 
