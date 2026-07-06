@@ -263,7 +263,7 @@ cpdef int filterValTooHighBeforeCalib(object curMod, object modValNamed, object 
     Returns FILTER_KEEP (1), FILTER_SKIP (0), or FILTER_ERROR (-1).
     """
     for key, val in modValNamed.items():
-        if val == "T":
+        if val in ("T", "epoch"):
             continue
         if not isinstance(modVal[val], (int, float)):
             continue
@@ -289,7 +289,7 @@ cpdef int filterValTooHighAfterCalib(object curMod, object modValNamed, object m
     invalidates the GPS fields to NaN instead of dropping the frame (frames may carry valid IMU).
     """
     for key, val in modValNamed.items():
-        if val == "T":
+        if val in ("T", "epoch"):
             continue
         if not isinstance(modVal[val], (int, float)):
             continue
@@ -412,6 +412,13 @@ cpdef int sanitizeGpsFields(object curMod, object modVal, str curModName):
 
 
 cpdef object loadOne(dict header, char * content, int curPos, dict calib_dict=None, int content_size=0, bint check_higher_values=True):
+    """Decode a single frame at curPos and return (data, size, timestamp).
+
+    Each decoded frame carries two time columns: "T" and "epoch" (both in seconds).
+    "epoch" is always the absolute epoch time (modTime). "T" is relative to the record start,
+    except when header["description"]["epochUs"] == 0 (stream-outside-record sentinel): there is
+    no frozen record epoch, so T == epoch and the 10-day/past sanity clip is skipped.
+    """
     cdef str curModName
     cdef object curMod
     cdef double modTime
@@ -476,11 +483,17 @@ cpdef object loadOne(dict header, char * content, int curPos, dict calib_dict=No
                     modVal[elem["name"]] = applyFactor(modVal[elem["name"]], curMod, elem)
                     modValNamed[varName] = elem["name"]
                 tmpCurPos += getSizeElem(elem["type"])
-            modVal["T"] = (modTime - header["description"]["epochUs"]) / 1000000  # time in seconds since rec start
-            if modVal["T"] > 3600 * 24 * 10 or modVal["T"] < -100:  # if time if over 10 days or in the past
-                missingByteSize += 1
-                continue
+            epochUs = header["description"]["epochUs"]
+            if epochUs == 0:  # stream outside record sentinel: no frozen epoch, T == absolute epoch, no clip
+                modVal["T"] = modTime / 1e6
+            else:
+                modVal["T"] = (modTime - epochUs) / 1e6  # time in seconds since rec start
+                if modVal["T"] > 3600 * 24 * 10 or modVal["T"] < -100:  # if time if over 10 days or in the past
+                    missingByteSize += 1
+                    continue
             modValNamed["T"] = "T"
+            modVal["epoch"] = modTime / 1e6  # absolute epoch time in seconds
+            modValNamed["epoch"] = "epoch"
 
             if check_higher_values:
                 beforeCalibResult = filterValTooHighBeforeCalib(curMod, modValNamed, modVal, curModName)
@@ -531,7 +544,7 @@ cpdef object loadOne(dict header, char * content, int curPos, dict calib_dict=No
         logSpam.warning(msg)
         if not data:
             raise Exception(msg)
-    return data, missingByteSize + skippedByteSize + curMod["size"], modTime / 1000000
+    return data, missingByteSize + skippedByteSize + curMod["size"], modTime / 1e6
 
 
 cdef object _round_value(object val, int decimals):
@@ -555,7 +568,9 @@ cpdef list loadAll(dict header, bytes content, int curPos=5, dict calib_dict=Non
                    bint check_higher_values=True, bint round_values=False, int round_decimals=6):
     """Decode all frames from an MQTT payload in a single C-level loop.
 
-    Iterates over the full payload and calls loadOne for each frame.
+    Iterates over the full payload and calls loadOne for each frame. Each frame's data carries
+    both the relative "T" column and the absolute "epoch" column (see loadOne); this realtime
+    path keeps "epoch" (unlike the offline decode output).
     If round_values is True, numeric values in data["data"] are rounded before being
     appended to the result list (T is rounded to 3 decimals, all others to round_decimals).
     Handles scalar floats, lists, and nested lists.
@@ -767,6 +782,11 @@ cpdef void printDecodingInfos(int statsAll, int percent, bint verbose=True, obje
 
 
 cpdef dict decode(str filename, bint verbose=True, dict config_client=None, object record=None, bint use_s3=True, bint check_higher_values=True):
+    """Decode a record file into a jsonData dict of modules.
+
+    The per-frame "epoch" column produced by loadOne is realtime-only and is excluded from this
+    offline output (only "T" and the regular data columns are kept).
+    """
     logging.info("<== decode start [{}] ==>".format(filename))
     cdef bint retSuccess = True
     cdef double start = time.time()
@@ -849,7 +869,7 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
         if newData["type"] == "gps" and isMini:
             new_gps_vals = {}
             for k, v in newData["data"].items():
-                if k != "T":
+                if k != "T" and k != "epoch":
                     new_gps_vals[k] = v
             if module_name in last_gps_data and new_gps_vals == last_gps_data[module_name]:
                 continue
@@ -890,6 +910,8 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
         if timeSec > lastTime:
             lastTime = timeSec
         for name in newData["data"].keys():
+            if name == "epoch":  # epoch is realtime-only, excluded from offline output
+                continue
             jsonData["modules"][newData["name"]]["data"][name].append(
                 newData["data"][name]
             )

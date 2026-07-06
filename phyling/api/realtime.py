@@ -1,5 +1,8 @@
 import json
 import logging
+import time
+
+import urllib3
 
 from phyling import phyling_utils
 from phyling.api import PhylingAPI
@@ -162,12 +165,15 @@ class PhylingRealtime:
         method: str,
         params: dict | None = None,
         timeout: float = -1,
-        wait_for_result: bool = False,
-    ) -> dict:
-        """Execute a command on a device
+    ) -> urllib3.HTTPResponse | None:
+        """Execute a command on a device (asynchronous, returns immediately)
         You need to send at least the method or the feature/cmd_type
         for example
         - method = v1.record.rec.start
+
+        The command is dispatched asynchronously: this call returns immediately. When
+        the command is being processed (HTTP 201) the response contains its `id`; poll
+        getRPCResponse() with that `id` to retrieve the result, or use executeRPCWait().
 
         Args:
             number (int): The device number
@@ -177,11 +183,10 @@ class PhylingRealtime:
 
             params (dict): The arguments for the command
             timeout (int, optional): The timeout for the command execution in seconds.
-            wait_for_result (bool, optional): If True, wait for the command to be executed and return the result.
-                                            If False, return immediately.
 
         Returns:
-            200: The result of the command execution
+            200: The command has an immediate result (notification or cached value)
+            201: The command is being processed (poll getRPCResponse() with the returned `id`)
             400: Bad request (invalid command, missing arguments, etc.)
             401: Unauthorized (user not connected)
             403: Forbidden (user does not have rights to access the device)
@@ -197,10 +202,78 @@ class PhylingRealtime:
                     "method": method,
                     "params": params if params else {},
                     "timeout": timeout,
-                    "wait_for_result": wait_for_result,
                 }
             ),
         )
+
+    def getRPCResponse(self, number: int, rpc_id: str) -> urllib3.HTTPResponse | None:
+        """Get the result of a command previously sent via executeRPC().
+
+        Args:
+            number (int): The device number
+            rpc_id (str): The RPC request id returned by executeRPC().
+
+        Returns:
+            200: The result of the command execution
+            202: The command is still being processed
+            400: Bad request (missing id)
+            401: Unauthorized (user not connected)
+            403: Forbidden (user does not have rights to access the device)
+            404: Device not found, or unknown/expired request id
+            413: Payload too large (the command result is too large)
+            500: Internal server error (command execution failed)
+            503: Service unavailable (device is turning off, etc.)
+        """
+        return self.api.POST(
+            url=f"/devices/rt/{self.api.client_id}/{number}/rpc/response",
+            body=json.dumps({"id": rpc_id}),
+        )
+
+    def executeRPCWait(
+        self,
+        number: int,
+        method: str,
+        params: dict | None = None,
+        timeout: float = -1,
+        poll_interval: float = 1.0,
+        max_wait: float = 60.0,
+    ) -> urllib3.HTTPResponse | None:
+        """Execute a command and wait for its result by polling /rpc/response.
+
+        Sends the command with executeRPC(), then polls getRPCResponse() every
+        `poll_interval` seconds until the result is available or `max_wait` elapses.
+
+        Args:
+            number (int): The device number
+            method (str): The command to execute on the device.
+            params (dict, optional): The arguments for the command.
+            timeout (int, optional): The device-side timeout for the command in seconds.
+            poll_interval (float, optional): Seconds between /rpc/response polls.
+            max_wait (float, optional): Maximum seconds to wait for the result.
+
+        Returns:
+            The final getRPCResponse() response (200 with the result), or the immediate
+            executeRPC() response for any non-201 status (immediate result or error). If
+            `max_wait` elapses before the command completes, returns the last 202 response
+            (a warning is logged) — inspect `res.status` to distinguish a timeout.
+        """
+        res = self.executeRPC(number, method, params=params, timeout=timeout)
+        if res.status != 201:
+            return res
+        rpc_id = json.loads(res.data.decode("utf-8")).get("id")
+        if not rpc_id:
+            return res
+        waited = 0.0
+        while waited < max_wait:
+            time.sleep(poll_interval)
+            waited += poll_interval
+            res = self.getRPCResponse(number, rpc_id)
+            if res.status != 202:
+                return res
+        logging.warning(
+            f"executeRPCWait timed out after {max_wait}s waiting for RPC id {rpc_id}"
+        )
+        return res
 
     """ --------------- Device realtime indicator --------------- """
 
