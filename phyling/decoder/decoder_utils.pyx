@@ -229,9 +229,46 @@ cpdef str getVarName(dict header, str modName, str varBaseName):
     return varBaseName
 
 
+cpdef void normalizeModuleFields(dict header):
+    """Normalize each module's field list to the internal dict form the decoder expects.
+
+    On the wire the per-module "description" field list comes in two shapes:
+      - legacy: a list of dicts {"name", "type", "unit", ...} (Maxi + already-deployed firmwares).
+      - compact: a list of [name, type, unit] triplets (recent Phyling-LTE firmwares).
+    Compact entries are converted in place to the dict form so all downstream code stays unchanged.
+    Disambiguation is done on the type of the first entry (dict -> legacy, list -> compact); empty
+    field lists are left untouched. Idempotent: re-running on an already-normalized header is a no-op.
+    """
+    cdef object mod
+    cdef object fields
+    cdef object entry
+    cdef list normalized
+    cdef str modName
+    if "modules" not in header:
+        return
+    for modName in header["modules"]:
+        mod = header["modules"][modName]
+        if not isinstance(mod, dict) or "description" not in mod:
+            continue
+        fields = mod["description"]
+        if not isinstance(fields, list) or len(fields) == 0:
+            continue
+        if not isinstance(fields[0], (list, tuple)):
+            continue  # already in legacy dict form -> nothing to do
+        normalized = []
+        for entry in fields:
+            normalized.append({
+                "name": entry[0],
+                "type": entry[1],
+                "unit": entry[2] if len(entry) > 2 else "",
+            })
+        mod["description"] = normalized
+
+
 cpdef void setup_header(dict header):
     if "__setup__" in header:  # already setup
         return
+    normalizeModuleFields(header)  # accept both compact and legacy per-module field lists
     if "deviceType" not in header["description"]:
         header["description"]["deviceType"] = "maxiphyling"
     if "version" not in header["description"]:
