@@ -85,6 +85,10 @@ def calibration(data, module, calib):
         coef = value["coef"] if "coef" in value else None
         offset = value["offset"] if "offset" in value else None
         if key in mapper:
+            # a module transmitting only derived channels (e.g. yaw/pitch/roll) carries none of the
+            # group columns: nothing to calibrate here, the device applied the group on board
+            if not all(col in data for col in mapper[key]):
+                continue
             if key == "adc":
                 mapper[key] = []
                 # create mapper for the 3 first ADC cols
