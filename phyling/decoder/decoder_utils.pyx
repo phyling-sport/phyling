@@ -580,7 +580,9 @@ cpdef object loadOne(dict header, char * content, int curPos, dict calib_dict=No
             msg = f"Missing some data ({missingByteSize} bytes from position {curPos})"
         logSpam.warning(msg)
         if not data:
-            raise Exception(msg)
+            raise EndOfFileException(msg)  # content is exhausted: truncated last frame
+    if not data:  # every remaining frame was skipped (e.g. standalone GPS frames with no fix)
+        raise EndOfFileException(f"No decodable data from position {curPos} ({skippedByteSize} bytes skipped)")
     return data, missingByteSize + skippedByteSize + curMod["size"], modTime / 1e6
 
 
@@ -640,6 +642,7 @@ cpdef list loadAll(dict header, bytes content, int curPos=5, dict calib_dict=Non
                 content=content,
                 curPos=curPos,
                 calib_dict=calib_dict,
+                content_size=len_content,  # without it getElem reads past the payload on a truncated frame
                 check_higher_values=check_higher_values,
             )
         except EndOfFileException:
@@ -959,6 +962,10 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
 
         logSpam.update()
     logSpam.end()
+
+    if statsAll == 0:
+        logging.error(f"No data decoded from file ({content_size} bytes)")
+        retSuccess = False
 
     for mod in jsonData["modules"].keys():
         mod_data = jsonData["modules"][mod]
