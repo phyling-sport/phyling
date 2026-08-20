@@ -19,6 +19,9 @@ TIME_MODULE_NAME = "__TIME_UPDATE__"
 TIME_MODULE_SIZE = 13
 
 HEADER_UPDATE_DICT = "__header_update__"
+LAST_VALID_T_DICT = "__last_valid_t__"
+MAX_TIME_JUMP_SEC = 3600 * 24 * 2  # generous vs. legitimate module gaps, tiny vs. a corrupted (~millions of years) T
+MAX_FIRST_T_SEC = 3600 * 24 * 35  # bootstrap bound: above the ~30-day record objective, tiny vs. a corrupted T
 
 try:
     from phylingUtils.data_layer.s3 import S3
@@ -281,6 +284,8 @@ cpdef void setup_header(dict header):
         header["description"]["epoch"] = int(header["description"]["epochUs"] / 1e6)
     if "timePrecisionUs" not in header["description"]:
         header["description"]["timePrecisionUs"] = 1e9  # default precision (no time)
+    if LAST_VALID_T_DICT not in header:
+        header[LAST_VALID_T_DICT] = {}
     header["__setup__"] = True
 
 
@@ -454,7 +459,13 @@ cpdef object loadOne(dict header, char * content, int curPos, dict calib_dict=No
     Each decoded frame carries two time columns: "T" and "epoch" (both in seconds).
     "epoch" is always the absolute epoch time (modTime). "T" is relative to the record start,
     except when header["description"]["epochUs"] == 0 (stream-outside-record sentinel): there is
-    no frozen record epoch, so T == epoch and the 10-day/past sanity clip is skipped.
+    no frozen record epoch, so T == epoch and the past/jump sanity checks are skipped.
+    Corruption is detected per module by comparing "T" to that module's last accepted "T"
+    (see LAST_VALID_T_DICT): a corrupted frame yields a near-random int64 timestamp, so any jump
+    over MAX_TIME_JUMP_SEC is treated as corrupted data rather than a legitimate long record.
+    A module's very first frame has no reference yet, so it is instead bound by MAX_FIRST_T_SEC:
+    without this, a corrupted first sample would poison LAST_VALID_T_DICT and reject every
+    legitimate frame that follows for that module.
     """
     cdef str curModName
     cdef object curMod
@@ -525,7 +536,14 @@ cpdef object loadOne(dict header, char * content, int curPos, dict calib_dict=No
                 modVal["T"] = modTime / 1e6
             else:
                 modVal["T"] = (modTime - epochUs) / 1e6  # time in seconds since rec start
-                if modVal["T"] > 3600 * 24 * 10 or modVal["T"] < -100:  # if time if over 10 days or in the past
+                lastValidT = header[LAST_VALID_T_DICT].get(curModName)
+                if modVal["T"] < -100:  # in the past
+                    missingByteSize += 1
+                    continue
+                if lastValidT is not None and abs(modVal["T"] - lastValidT) > MAX_TIME_JUMP_SEC:
+                    missingByteSize += 1
+                    continue
+                if lastValidT is None and abs(modVal["T"]) > MAX_FIRST_T_SEC:  # bootstrap: no reference to compare against yet
                     missingByteSize += 1
                     continue
             modValNamed["T"] = "T"
@@ -567,6 +585,8 @@ cpdef object loadOne(dict header, char * content, int curPos, dict calib_dict=No
                 "name": curModName,
                 "data": modValNamed,
             }
+            if epochUs != 0:
+                header[LAST_VALID_T_DICT][curModName] = modVal["T"]
             break
         except Exception as e:
             if content_size == 0:
