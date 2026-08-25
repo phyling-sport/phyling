@@ -331,7 +331,7 @@ cpdef int filterValTooHighAfterCalib(object curMod, object modValNamed, object m
     invalidates the GPS fields to NaN instead of dropping the frame (frames may carry valid IMU).
     """
     for key, val in modValNamed.items():
-        if val in ("T", "epoch"):
+        if val in ("T", "epoch", "ap_bssid"):  # ap_bssid is a mac addr (module debug)
             continue
         if not isinstance(modVal[val], (int, float)):
             continue
