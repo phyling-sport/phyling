@@ -285,7 +285,7 @@ def time_correction_v1(mod_data: dict):
 def time_correction_v2(mod_data: dict, mod: str):
     """Compute time correction since v6.6.2"""
     MIN_TIME_DIFF_SEC = 15
-    MAX_SHIFT_SEC = 1
+    MAX_SHIFT_SEC = 3
     T = np.array(mod_data["data"]["T"])
     notifDiff = np.array(mod_data["data"]["notifDiff"])
     # Remove notifDiff outliers
