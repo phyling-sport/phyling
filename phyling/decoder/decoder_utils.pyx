@@ -20,6 +20,7 @@ TIME_MODULE_SIZE = 13
 
 HEADER_UPDATE_DICT = "__header_update__"
 LAST_VALID_T_DICT = "__last_valid_t__"
+LAST_EPOCH_US_DICT = "__last_epoch_us__"
 MAX_TIME_JUMP_SEC = 3600 * 24 * 2  # generous vs. legitimate module gaps, tiny vs. a corrupted (~millions of years) T
 MAX_FIRST_T_SEC = 3600 * 24 * 35  # bootstrap bound: above the ~30-day record objective, tiny vs. a corrupted T
 
@@ -269,6 +270,8 @@ cpdef void normalizeModuleFields(dict header):
 
 
 cpdef void setup_header(dict header):
+    if LAST_VALID_T_DICT not in header:  # run even on an already-setup header (e.g. stored recDescription)
+        header[LAST_VALID_T_DICT] = {}
     if "__setup__" in header:  # already setup
         return
     normalizeModuleFields(header)  # accept both compact and legacy per-module field lists
@@ -284,8 +287,6 @@ cpdef void setup_header(dict header):
         header["description"]["epoch"] = int(header["description"]["epochUs"] / 1e6)
     if "timePrecisionUs" not in header["description"]:
         header["description"]["timePrecisionUs"] = 1e9  # default precision (no time)
-    if LAST_VALID_T_DICT not in header:
-        header[LAST_VALID_T_DICT] = {}
     header["__setup__"] = True
 
 
@@ -535,15 +536,24 @@ cpdef object loadOne(dict header, char * content, int curPos, dict calib_dict=No
             if epochUs == 0:  # stream outside record sentinel: no frozen epoch, T == absolute epoch, no clip
                 modVal["T"] = modTime / 1e6
             else:
+                if header.get(LAST_EPOCH_US_DICT) != epochUs:  # new record reusing the same header: drop stale refs
+                    header[LAST_VALID_T_DICT] = {}
+                    header[LAST_EPOCH_US_DICT] = epochUs
                 modVal["T"] = (modTime - epochUs) / 1e6  # time in seconds since rec start
                 lastValidT = header[LAST_VALID_T_DICT].get(curModName)
                 if modVal["T"] < -100:  # in the past
+                    logSpam.warning(f"{curModName}: T={modVal['T']:.1f}s is in the past, treated as corrupted")
                     missingByteSize += 1
                     continue
                 if lastValidT is not None and abs(modVal["T"] - lastValidT) > MAX_TIME_JUMP_SEC:
+                    logSpam.warning(
+                        f"{curModName}: T={modVal['T']:.1f}s jumps {abs(modVal['T'] - lastValidT):.0f}s from last "
+                        f"valid T={lastValidT:.1f}s (> {MAX_TIME_JUMP_SEC}s), treated as corrupted"
+                    )
                     missingByteSize += 1
                     continue
-                if lastValidT is None and abs(modVal["T"]) > MAX_FIRST_T_SEC:  # bootstrap: no reference to compare against yet
+                if lastValidT is None and abs(modVal["T"]) > MAX_FIRST_T_SEC:  # bootstrap: no reference yet
+                    logSpam.warning(f"{curModName}: first T={modVal['T']:.1f}s > bootstrap bound {MAX_FIRST_T_SEC}s")
                     missingByteSize += 1
                     continue
             modValNamed["T"] = "T"
@@ -849,6 +859,7 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
     """
     logging.info("<== decode start [{}] ==>".format(filename))
     cdef bint retSuccess = True
+    cdef str failReason = ""
     cdef double start = time.time()
 
     cdef object header
@@ -984,7 +995,8 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
     logSpam.end()
 
     if statsAll == 0:
-        logging.error(f"No data decoded from file ({content_size} bytes)")
+        failReason = f"No data decoded from file ({content_size} bytes)"
+        logging.error(failReason)
         retSuccess = False
 
     for mod in jsonData["modules"].keys():
@@ -1052,4 +1064,4 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
     if retSuccess:
         return jsonData
     else:
-        raise Exception("Error during decoding")
+        raise Exception(failReason or "Error during decoding")
