@@ -19,6 +19,10 @@ TIME_MODULE_NAME = "__TIME_UPDATE__"
 TIME_MODULE_SIZE = 13
 
 HEADER_UPDATE_DICT = "__header_update__"
+LAST_VALID_T_DICT = "__last_valid_t__"
+LAST_EPOCH_US_DICT = "__last_epoch_us__"
+MAX_TIME_JUMP_SEC = 3600 * 24 * 2  # generous vs. legitimate module gaps, tiny vs. a corrupted (~millions of years) T
+MAX_FIRST_T_SEC = 3600 * 24 * 35  # bootstrap bound: above the ~30-day record objective, tiny vs. a corrupted T
 
 try:
     from phylingUtils.data_layer.s3 import S3
@@ -266,6 +270,8 @@ cpdef void normalizeModuleFields(dict header):
 
 
 cpdef void setup_header(dict header):
+    if LAST_VALID_T_DICT not in header:  # run even on an already-setup header (e.g. stored recDescription)
+        header[LAST_VALID_T_DICT] = {}
     if "__setup__" in header:  # already setup
         return
     normalizeModuleFields(header)  # accept both compact and legacy per-module field lists
@@ -326,7 +332,7 @@ cpdef int filterValTooHighAfterCalib(object curMod, object modValNamed, object m
     invalidates the GPS fields to NaN instead of dropping the frame (frames may carry valid IMU).
     """
     for key, val in modValNamed.items():
-        if val in ("T", "epoch"):
+        if val in ("T", "epoch", "ap_bssid"):  # ap_bssid is a mac addr (module debug)
             continue
         if not isinstance(modVal[val], (int, float)):
             continue
@@ -454,7 +460,13 @@ cpdef object loadOne(dict header, char * content, int curPos, dict calib_dict=No
     Each decoded frame carries two time columns: "T" and "epoch" (both in seconds).
     "epoch" is always the absolute epoch time (modTime). "T" is relative to the record start,
     except when header["description"]["epochUs"] == 0 (stream-outside-record sentinel): there is
-    no frozen record epoch, so T == epoch and the 10-day/past sanity clip is skipped.
+    no frozen record epoch, so T == epoch and the past/jump sanity checks are skipped.
+    Corruption is detected per module by comparing "T" to that module's last accepted "T"
+    (see LAST_VALID_T_DICT): a corrupted frame yields a near-random int64 timestamp, so any jump
+    over MAX_TIME_JUMP_SEC is treated as corrupted data rather than a legitimate long record.
+    A module's very first frame has no reference yet, so it is instead bound by MAX_FIRST_T_SEC:
+    without this, a corrupted first sample would poison LAST_VALID_T_DICT and reject every
+    legitimate frame that follows for that module.
     """
     cdef str curModName
     cdef object curMod
@@ -524,8 +536,24 @@ cpdef object loadOne(dict header, char * content, int curPos, dict calib_dict=No
             if epochUs == 0:  # stream outside record sentinel: no frozen epoch, T == absolute epoch, no clip
                 modVal["T"] = modTime / 1e6
             else:
+                if header.get(LAST_EPOCH_US_DICT) != epochUs:  # new record reusing the same header: drop stale refs
+                    header[LAST_VALID_T_DICT] = {}
+                    header[LAST_EPOCH_US_DICT] = epochUs
                 modVal["T"] = (modTime - epochUs) / 1e6  # time in seconds since rec start
-                if modVal["T"] > 3600 * 24 * 10 or modVal["T"] < -100:  # if time if over 10 days or in the past
+                lastValidT = header[LAST_VALID_T_DICT].get(curModName)
+                if modVal["T"] < -100:  # in the past
+                    logSpam.warning(f"{curModName}: T={modVal['T']:.1f}s is in the past, treated as corrupted")
+                    missingByteSize += 1
+                    continue
+                if lastValidT is not None and abs(modVal["T"] - lastValidT) > MAX_TIME_JUMP_SEC:
+                    logSpam.warning(
+                        f"{curModName}: T={modVal['T']:.1f}s jumps {abs(modVal['T'] - lastValidT):.0f}s from last "
+                        f"valid T={lastValidT:.1f}s (> {MAX_TIME_JUMP_SEC}s), treated as corrupted"
+                    )
+                    missingByteSize += 1
+                    continue
+                if lastValidT is None and abs(modVal["T"]) > MAX_FIRST_T_SEC:  # bootstrap: no reference yet
+                    logSpam.warning(f"{curModName}: first T={modVal['T']:.1f}s > bootstrap bound {MAX_FIRST_T_SEC}s")
                     missingByteSize += 1
                     continue
             modValNamed["T"] = "T"
@@ -567,6 +595,8 @@ cpdef object loadOne(dict header, char * content, int curPos, dict calib_dict=No
                 "name": curModName,
                 "data": modValNamed,
             }
+            if epochUs != 0:
+                header[LAST_VALID_T_DICT][curModName] = modVal["T"]
             break
         except Exception as e:
             if content_size == 0:
@@ -580,7 +610,9 @@ cpdef object loadOne(dict header, char * content, int curPos, dict calib_dict=No
             msg = f"Missing some data ({missingByteSize} bytes from position {curPos})"
         logSpam.warning(msg)
         if not data:
-            raise Exception(msg)
+            raise EndOfFileException(msg)  # content is exhausted: truncated last frame
+    if not data:  # every remaining frame was skipped (e.g. standalone GPS frames with no fix)
+        raise EndOfFileException(f"No decodable data from position {curPos} ({skippedByteSize} bytes skipped)")
     return data, missingByteSize + skippedByteSize + curMod["size"], modTime / 1e6
 
 
@@ -640,6 +672,7 @@ cpdef list loadAll(dict header, bytes content, int curPos=5, dict calib_dict=Non
                 content=content,
                 curPos=curPos,
                 calib_dict=calib_dict,
+                content_size=len_content,  # without it getElem reads past the payload on a truncated frame
                 check_higher_values=check_higher_values,
             )
         except EndOfFileException:
@@ -826,6 +859,7 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
     """
     logging.info("<== decode start [{}] ==>".format(filename))
     cdef bint retSuccess = True
+    cdef str failReason = ""
     cdef double start = time.time()
 
     cdef object header
@@ -960,6 +994,11 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
         logSpam.update()
     logSpam.end()
 
+    if statsAll == 0:
+        failReason = f"No data decoded from file ({content_size} bytes)"
+        logging.error(failReason)
+        retSuccess = False
+
     for mod in jsonData["modules"].keys():
         mod_data = jsonData["modules"][mod]
         # apply time correction for miniphyling
@@ -1025,4 +1064,4 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
     if retSuccess:
         return jsonData
     else:
-        raise Exception("Error during decoding")
+        raise Exception(failReason or "Error during decoding")

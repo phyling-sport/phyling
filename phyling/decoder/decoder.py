@@ -248,6 +248,7 @@ def fuse(
     prefix: bool = False,
     t0: Optional[dict] = None,
     x: str = "T",
+    interp_df1=True,
 ) -> pd.DataFrame:
     """Performs fusion of DataFrames at a given sampling rate.
 
@@ -258,6 +259,7 @@ def fuse(
         prefix (bool): if True, add module as prefix to column names.
         t0: object with synchronisation times for each module.
         x (str): Time column name.
+        interp_df1 (bool): whether to interpolate the first DataFrame (see fuse_data function).
 
     Returns:
         Fused DataFrame.
@@ -283,7 +285,7 @@ def fuse(
                 fs=output_fs,
                 dt=dt,
                 type_="union",
-                interp_df1=True,
+                interp_df1=interp_df1,
                 x=x,
             )
             prefix1 = ""
