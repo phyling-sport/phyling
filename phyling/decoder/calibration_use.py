@@ -5,6 +5,48 @@ import numpy as np
 from phyling.decoder import calib_texisense
 
 
+CALIB_3D_MAPPER = {
+    "acc": ["acc_x", "acc_y", "acc_z"],
+    "gyro": ["gyro_x", "gyro_y", "gyro_z"],
+    "adc": [],  # dynamic: the 3 first ADC columns of the data
+}
+
+
+def get_calib_3d_cols(group, cols):
+    """Get the data columns calibrated by a 3D calibration group.
+
+    Parameters:
+        group (str): 3D group name, key of CALIB_3D_MAPPER
+        cols (iterable): available data column names
+
+    Return:
+        list of the 3 column names, or None if the group cannot be applied to those columns
+    """
+    if group not in CALIB_3D_MAPPER:
+        return None
+    cols = list(cols)
+    if group != "adc":
+        group_cols = CALIB_3D_MAPPER[group]
+        # a module transmitting only derived channels (e.g. yaw/pitch/roll) carries none of the
+        # group columns: nothing to calibrate here, the device applied the group on board
+        return group_cols if all(col in cols for col in group_cols) else None
+
+    # ADC columns are named adc_0, adc_1, adc_2 or 0, 1, 2 depending on the data format
+    adc_cols = []
+    for col in sorted(cols):
+        if col.startswith("adc_"):
+            adc_cols.append(col)
+        else:
+            try:
+                int(col)  # check if col is `0`, `1`, `2`, etc.
+                adc_cols.append(col)
+            except ValueError:
+                pass
+        if len(adc_cols) == 3:
+            return adc_cols
+    return None
+
+
 def calibration_1D(data, coef=None, offset=None):
     """
     Parameters:
@@ -71,11 +113,6 @@ def calibration(data, module, calib):
     if module not in calib:
         return data
 
-    mapper = {
-        "acc": ["acc_x", "acc_y", "acc_z"],
-        "gyro": ["gyro_x", "gyro_y", "gyro_z"],
-        "adc": [],
-    }
     for key, value in calib[module].items():
         if key == "high_range_gyro":
             continue
@@ -84,31 +121,15 @@ def calibration(data, module, calib):
 
         coef = value["coef"] if "coef" in value else None
         offset = value["offset"] if "offset" in value else None
-        if key in mapper:
-            # a module transmitting only derived channels (e.g. yaw/pitch/roll) carries none of the
-            # group columns: nothing to calibrate here, the device applied the group on board
-            if not all(col in data for col in mapper[key]):
-                continue
-            if key == "adc":
-                mapper[key] = []
-                # create mapper for the 3 first ADC cols
-                # adc_0, adc_1, adc_2 or 0, 1, 2 depending on data format
-                for col in sorted(data.keys()):
-                    if col.startswith("adc_"):
-                        mapper[key].append(col)
-                    else:
-                        try:
-                            int(col)  # check if col is `0`, `1`, `2`, etc.
-                            mapper[key].append(col)
-                        except ValueError:
-                            pass
-                    if len(mapper[key]) == 3:
-                        break
-                if len(mapper[key]) != 3:
+        if key in CALIB_3D_MAPPER:
+            cols = get_calib_3d_cols(key, data)
+            if cols is None:
+                if key == "adc":
                     raise ValueError(
                         f"Calibration3D: Cannot find 3 columns for adc calibration in data: {data.keys()}"
                     )
-            data = calibration_3D(data, mapper[key], coef, offset)
+                continue
+            data = calibration_3D(data, cols, coef, offset)
         elif key in data and "texisense_calib_base64" in calib[module][key]:
             data[key] = calib_texisense.apply_texisense_calibration(
                 data[key],
