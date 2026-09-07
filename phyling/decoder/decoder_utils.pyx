@@ -911,8 +911,8 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
         except Exception:
             dev_id = -1
     if content_size == 0:
-        logging.error("File is empty")
-        raise Exception("File is empty")
+        # not logged here: the caller logs the raised message once, with its REC id
+        raise ValueError("File is empty")
     while 1:
         if content_size <= curPos:
             break
@@ -995,8 +995,8 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
     logSpam.end()
 
     if statsAll == 0:
+        # not logged here: failReason is raised below and logged once by the caller, with its REC id
         failReason = f"No data decoded from file ({content_size} bytes)"
-        logging.error(failReason)
         retSuccess = False
 
     for mod in jsonData["modules"].keys():
@@ -1064,4 +1064,5 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
     if retSuccess:
         return jsonData
     else:
-        raise Exception(failReason or "Error during decoding")
+        # ValueError, not Exception: the caller reads it as a failure due to the file content
+        raise ValueError(failReason or "Error during decoding")
