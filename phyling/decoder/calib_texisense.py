@@ -4,162 +4,208 @@ import struct
 
 import numpy as np
 
+CHUNK_SIZE = (
+    1026  # one pressure step: 2 bytes of pressure + one response byte per sensor
+)
+NUM_SENSORS = 1024
+MAT_SIZE = 32
+RAW_LEVELS = 256  # a sensor response is one byte
+
 # Cache global pour stocker les LUTs pré-calculées
 # Clé : hash du buffer, Valeur : np.ndarray de forme (1024, 256)
 saved_luts: dict[str, np.ndarray] = {}
 
 
-def get_calibration_fingerprint(calibration_raw_bytes):
-    return hashlib.sha256(calibration_raw_bytes).hexdigest()
+def get_calibration_fingerprint(
+    calibration_raw_bytes, weight_asc=1.0, weight_desc=1.0, threshold_pa=0.0
+):
+    """Build the cache key of a lookup table.
+
+    The phase weights and the pressure threshold shape the table itself, so two mats sharing a
+    calibration buffer but not their metadata must not share a table. Orientation is applied after
+    the lookup and has nothing to do here.
+
+    Parameters:
+        calibration_raw_bytes (bytes): raw calibration blob read from the mat
+        weight_asc (float): weight of the ascending phase
+        weight_desc (float): weight of the descending phase
+        threshold_pa (float): pressure floor, in Pascal
+
+    Returns:
+        str: the cache key
+    """
+    digest = hashlib.sha256(calibration_raw_bytes).hexdigest()
+    return f"{digest}:{weight_asc}:{weight_desc}:{threshold_pa}"
+
+
+def _metadata_number(metadata, key, default):
+    """Read one numeric metadata field, falling back on the legacy default when it is absent."""
+    value = metadata.get(key, None)
+    return default if value is None else float(value)
+
+
+def read_lut_metadata(metadata):
+    """Read the metadata shaping the lookup table: phase weights and resting pressure threshold.
+
+    Every key is optional, metadata block included: mats read before the firmware reported it, and
+    every record already stored, carry none of them. Missing weights average the two phases evenly,
+    a missing threshold leaves no floor at all - in both cases the historical behaviour.
+
+    Parameters:
+        metadata (dict): texisense_metadata block of the mat, possibly empty
+
+    Returns:
+        tuple: (weight_asc, weight_desc, threshold_pa) as floats
+    """
+    weight_asc = _metadata_number(metadata, "weight_asc", 1.0)
+    weight_desc = _metadata_number(metadata, "weight_desc", 1.0)
+    if weight_asc + weight_desc == 0:
+        weight_asc, weight_desc = 1.0, 1.0
+    return weight_asc, weight_desc, _metadata_number(metadata, "threshold_pa", 0.0)
 
 
 def generate_texisense_calibration_data(buffer):
+    """Parse the calibration buffer into its pressure steps and per-sensor responses.
+
+    The buffer is a whole number of 1026-byte chunks, each holding one pressure step. The step
+    count varies from one mat to another, so it is derived from the buffer length rather than
+    assumed: the mat sweeps the pressure up then back down, with a step count that may differ
+    between the two phases.
+
+    Parameters:
+        buffer (bytes): raw calibration blob read from the mat
+
+    Returns:
+        tuple: (pressures, raws) with pressures of shape (n,) in Pascal and raws of shape (n, 1024)
     """
-    Analyzes the calibration buffer (46,170 bytes).
-    Returns a list containing the calibration points (raw_value, pressure_pascal)
-    for each sensor (32x32 = 1024).
+    if len(buffer) < CHUNK_SIZE or len(buffer) % CHUNK_SIZE != 0:
+        raise ValueError(
+            f"Calibration buffer of {len(buffer)} bytes is not a multiple of {CHUNK_SIZE}"
+        )
+
+    num_steps = len(buffer) // CHUNK_SIZE
+    # pressure is big-endian: read little-endian the mat caps at 250 Pa, when its own software reports 9797 Pa
+    pressures = np.array(
+        [struct.unpack_from(">H", buffer, i * CHUNK_SIZE)[0] for i in range(num_steps)]
+    )
+    raws = np.array(
+        [
+            np.frombuffer(buffer, np.uint8, NUM_SENSORS, i * CHUNK_SIZE + 2)
+            for i in range(num_steps)
+        ]
+    )
+    return pressures, raws
+
+
+def _phase_lut(pressures, raws):
+    """Build the raw-to-pressure table of a single calibration phase, for a single sensor.
+
+    Points are averaged per raw value then sorted by raw value, which is what np.interp needs: fed a
+    non-monotonic axis it returns silently wrong values. A (0, 0) anchor is added because a mat does
+    not necessarily report a zero-pressure step, and a null response is pinned to 0 Pa instead of
+    being averaged: a cell answering 0 reports no load detected, whatever the bench applied at that
+    step, so a cell still mute over the first steps must not inherit their mean. Past the highest
+    calibrated response the last slope is extended, to avoid the plateau the manufacturer warns
+    about - the further from that step, the less accurate the extrapolation. A sensor that saturates
+    answers the same value on several steps, so the averaged curve is forced non-decreasing rather
+    than left to dip and extrapolate downwards.
+
+    Parameters:
+        pressures (np.ndarray): pressure of each step of the phase, in Pascal
+        raws (np.ndarray): response of that sensor at each step of the phase
+
+    Returns:
+        np.ndarray: shape (256,), the pressure in Pascal for every possible raw value
     """
-    CHUNK_SIZE = 1026
-    NUM_CHUNKS = 45
-    NUM_SENSORS = 1024
+    raw = np.concatenate(([0], raws)).astype("float64")
+    press = np.concatenate(([0], pressures)).astype("float64")
 
-    if len(buffer) < CHUNK_SIZE * NUM_CHUNKS:
-        raise ValueError("Buffer too small")
+    uniq_raw, inverse = np.unique(raw, return_inverse=True)
+    uniq_press = np.bincount(inverse, weights=press) / np.bincount(inverse)
+    # a cell mute over the first steps averages them into a non-zero floor: no response means no load
+    uniq_press[uniq_raw == 0] = 0
+    # a saturated sensor answers the same value on several steps: averaging them must not make pressure drop
+    uniq_press = np.maximum.accumulate(uniq_press)
 
-    # 1. Buffer Parsing
-    pressures = []  # List of pressures (P)
-    sensor_data = [[] for _ in range(NUM_SENSORS)]  # Raw data (R) per sensor
+    raw_range = np.arange(RAW_LEVELS)
+    lut = np.interp(raw_range, uniq_raw, uniq_press)
 
-    for i in range(NUM_CHUNKS):
-        offset = i * CHUNK_SIZE
-        # The first 2 bytes are the pressure in Pascal (Unsigned Short)
-        p_val = struct.unpack("<H", buffer[offset : offset + 2])[0]
-        pressures.append(p_val)
-
-        # The next 1024 bytes are the sensor responses
-        # Note: We assume here that sensors are 1 byte (0-255)
-        # as suggested by the buffer. If it were 12-bit/2-byte, it would need adjustment.
-        raw_values = struct.unpack("1024B", buffer[offset + 2 : offset + 1026])
-        for s in range(NUM_SENSORS):
-            sensor_data[s].append(raw_values[s])
-
-    # 2. Phase Separation
-    # Find the index of the maximum pressure to separate ramp-up and ramp-down phases
-    idx_max = pressures.index(max(pressures))
-
-    final_calibration = []
-
-    # 3. Processing per Sensor
-    for s in range(NUM_SENSORS):
-        # Ascending phase: from start to max
-        asc_p = pressures[: idx_max + 1]
-        asc_r = sensor_data[s][: idx_max + 1]
-
-        # Descending phase: from max to end
-        desc_p = pressures[idx_max:]
-        desc_r = sensor_data[s][idx_max:]
-
-        # Create a map to average values by pressure level
-        pressure_map = {}
-
-        # Add the essential (0,0) point
-        pressure_map[0] = [0]
-
-        # Group raw values by identical pressure levels
-        for p, r in zip(asc_p, asc_r):
-            if p not in pressure_map:
-                pressure_map[p] = []
-            pressure_map[p].append(r)
-
-        for p, r in zip(desc_p, desc_r):
-            if p not in pressure_map:
-                pressure_map[p] = []
-            pressure_map[p].append(r)
-
-        # Averaging and sorting by raw value (R)
-        sorted_points = []
-        for p in sorted(pressure_map.keys()):
-            avg_r = sum(pressure_map[p]) / len(pressure_map[p])
-            sorted_points.append((avg_r, p))
-
-        # 4. Extrapolation
-        # Calculate the slope over the last two steps to avoid the "plateau" effect
-        if len(sorted_points) >= 2:
-            r2, p2 = sorted_points[-1]
-            r1, p1 = sorted_points[-2]
-            if r2 != r1:
-                slope = (p2 - p1) / (r2 - r1)
-                # Add a virtual point far beyond (e.g., max ADC 4095)
-                # If your data is 8-bit (0-255), use 255.
-                r_extrapol = 255
-                p_extrapol = p2 + slope * (r_extrapol - r2)
-                sorted_points.append((float(r_extrapol), float(p_extrapol)))
-
-        final_calibration.append(sorted_points)
-
-    return final_calibration
-
-
-def generate_lut(calibration_data):
-    """
-    Transforme les points de pivot en une Look-Up Table (LUT) 1024x256.
-    On pré-calcule l'interpolation pour chaque valeur brute possible (0-255).
-    """
-    # On crée une grille de 256 valeurs (0, 1, 2, ..., 255)
-    raw_range = np.arange(256)
-    lut = np.zeros((1024, 256), dtype=np.float32)
-
-    for s in range(1024):
-        points = calibration_data[s]
-        xp = [p[0] for p in points]  # Raw
-        fp = [p[1] for p in points]  # Pressure
-
-        # Interpolation numpy sur toute la plage 0-255 d'un coup
-        # left/right gèrent les cas hors bornes (paliers 0 et max)
-        interp_values = np.interp(raw_range, xp, fp)
-
-        # Optionnel : Si tu veux garder ton extrapolation spécifique au-delà du dernier point
-        # au lieu de plafonner (comportement par défaut de np.interp)
-        last_raw = xp[-1]
-        if last_raw < 255 and len(xp) >= 2:
-            slope = (fp[-1] - fp[-2]) / (xp[-1] - xp[-2]) if (xp[-1] != xp[-2]) else 0
-            # On remplace les valeurs après le dernier point connu par l'extrapolation
-            extrapol_mask = raw_range > last_raw
-            interp_values[extrapol_mask] = fp[-1] + slope * (
-                raw_range[extrapol_mask] - last_raw
-            )
-
-        lut[s] = interp_values
-
+    if (
+        len(uniq_raw) >= 2
+        and uniq_raw[-1] < RAW_LEVELS - 1
+        and uniq_raw[-1] != uniq_raw[-2]
+    ):
+        slope = (uniq_press[-1] - uniq_press[-2]) / (uniq_raw[-1] - uniq_raw[-2])
+        beyond = raw_range > uniq_raw[-1]
+        lut[beyond] = uniq_press[-1] + slope * (raw_range[beyond] - uniq_raw[-1])
     return lut
 
 
-def apply_texisense_calibration(raw_matrix, calibration_base64):
-    """
-    Applique la calibration de manière ultra-optimisée en utilisant une LUT.
-    """
-    calibration_raw = base64.b64decode(calibration_base64)
-    h = get_calibration_fingerprint(calibration_raw)
+def generate_lut(pressures, raws, weight_asc=1.0, weight_desc=1.0, threshold_pa=0.0):
+    """Build the lookup table turning each sensor's raw response into a pressure in Pascal.
 
-    # 1. Gestion du cache de la LUT
+    The ascending and descending phases are interpolated separately and their two tables averaged,
+    as prescribed by the manufacturer. Averaging the raw responses instead interleaves the steps of
+    the two phases, whose pressure levels do not coincide, and breaks the monotonicity np.interp
+    relies on. The threshold is baked into the table rather than applied frame by frame: an unloaded
+    cell still answers a few LSB, and flooring them here costs nothing at lookup time.
+
+    Parameters:
+        pressures (np.ndarray): pressure of each calibration step, in Pascal
+        raws (np.ndarray): shape (n, 1024), response of every sensor at each step
+        weight_asc (float): weight of the ascending phase in the average
+        weight_desc (float): weight of the descending phase in the average
+        threshold_pa (float): pressure below which a cell reads 0, in Pascal
+
+    Returns:
+        np.ndarray: shape (1024, 256) float32, indexed by sensor then by raw value
+    """
+    idx_max = int(np.argmax(pressures))
+    asc, desc = slice(0, idx_max + 1), slice(idx_max, None)
+    total_weight = weight_asc + weight_desc
+
+    lut = np.zeros((NUM_SENSORS, RAW_LEVELS), dtype=np.float32)
+    for s in range(NUM_SENSORS):
+        lut[s] = (
+            weight_asc * _phase_lut(pressures[asc], raws[asc, s])
+            + weight_desc * _phase_lut(pressures[desc], raws[desc, s])
+        ) / total_weight
+
+    if threshold_pa > 0:
+        lut[lut < threshold_pa] = 0
+    return lut
+
+
+def apply_texisense_calibration(raw_matrix, calibration_base64, metadata=None):
+    """Turn a 32x32 matrix of raw sensor responses into pressures in Pascal.
+
+    Parameters:
+        raw_matrix: 32x32 matrix of raw sensor responses (0-255)
+        calibration_base64 (str): calibration blob read from the mat, base64 encoded
+        metadata (dict): texisense_metadata block of the mat, absent on every record already stored
+            and on every mat not read since the firmware started reporting it
+
+    The orientation flags of the metadata are deliberately not applied: the mat already came out
+    the right way up, and their exact meaning is unknown - the manufacturer uses them to remap the
+    calibration blob, in code we do not have. They are stored, waiting for that answer.
+
+    Returns:
+        np.ndarray: shape (32, 32) float32, in Pascal
+    """
+    metadata = metadata or {}
+    weight_asc, weight_desc, threshold_pa = read_lut_metadata(metadata)
+    calibration_raw = base64.b64decode(calibration_base64)
+    h = get_calibration_fingerprint(
+        calibration_raw, weight_asc, weight_desc, threshold_pa
+    )
+
     if h not in saved_luts:
-        # On génère les points de pivots (ton ancienne fonction)
-        calib_points = generate_texisense_calibration_data(calibration_raw)
-        # On transforme ces points en une table de recherche (LUT)
-        saved_luts[h] = generate_lut(calib_points)
+        pressures, raws = generate_texisense_calibration_data(calibration_raw)
+        saved_luts[h] = generate_lut(
+            pressures, raws, weight_asc, weight_desc, threshold_pa
+        )
 
     lut = saved_luts[h]
-
-    # 2. Application "Magique" (Lookup vectorisé)
-    # On aplatit la matrice d'entrée (32x32 -> 1024)
     flat_raw = np.array(raw_matrix, dtype=np.int32).flatten()
-
-    # On crée un index pour chaque capteur (0 à 1023)
-    sensor_indices = np.arange(1024)
-
-    # L'indexation NumPy fait le lookup instantanément :
-    # Pour chaque capteur 'i', on prend la valeur dans lut[i, valeur_brute_du_capteur_i]
-    calibrated_flat = lut[sensor_indices, flat_raw]
-
-    # 3. Retour au format 32x32
-    return calibrated_flat.reshape(32, 32).transpose()
+    calibrated_flat = lut[np.arange(NUM_SENSORS), flat_raw]
+    return calibrated_flat.reshape(MAT_SIZE, MAT_SIZE).transpose()
