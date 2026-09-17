@@ -133,9 +133,8 @@ def calibration(data, module, calib):
         elif key in data and "texisense_calib_base64" in calib[module][key]:
             data[key] = calib_texisense.apply_texisense_calibration(
                 data[key],
-                calibration_base64=calib[module][key].get(
-                    "texisense_calib_base64", None
-                ),
+                calibration_base64=calib[module][key]["texisense_calib_base64"],
+                metadata=calib[module][key].get("texisense_metadata", None),
             )
         elif key in data:
             data[key] = calibration_1D(data[key], coef, offset)
