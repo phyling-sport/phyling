@@ -10,6 +10,23 @@ CHUNK_SIZE = (
 NUM_SENSORS = 1024
 MAT_SIZE = 32
 RAW_LEVELS = 256  # a sensor response is one byte
+# one gf/cm2 in Pascal: the calibration steps are stored in gf/cm2, as the vendor software reads them
+TEXISENSE_PRESSURE_UNIT_PA = 98.0665
+# 3x3 spatial smoothing the vendor software applies to every map, recovered from its per-cell export
+SMOOTHING_KERNEL = np.array([[1, 1, 1], [1, 3, 1], [1, 1, 1]], dtype=np.float64)
+
+# TexicarePro model, as the vendor software exports it: the mat metadata report none of it (they
+# announce 470 mm / 15 mm steps). Texisense order: row r from the front, column c from the left,
+# cell k = r * 32 + c. Sensor s of the mat is Texisense cell (31 - s // 32, s % 32).
+TEXICARE_PRO_GEOMETRY = {
+    "col_widths_mm": np.array(
+        [15.0, *[30.0] * 4, 24.0, *[18.0] * 8, 29.25, 40.5, 35.5, 24.25, *[18.0] * 6]
+        + [20.0, *[22.0] * 4, 22.5, 23.0, 11.5]
+    ),
+    "row_heights_mm": np.array(
+        [13.5, 27.0, 26.5, 24.5, *[23.0] * 8, 20.0, *[17.0] * 18, 8.5]
+    ),
+}
 
 # Cache global pour stocker les LUTs pré-calculées
 # Clé : hash du buffer, Valeur : np.ndarray de forme (1024, 256)
@@ -72,6 +89,10 @@ def generate_texisense_calibration_data(buffer):
     assumed: the mat sweeps the pressure up then back down, with a step count that may differ
     between the two phases.
 
+    Each step pressure is a little-endian word in gf/cm2, converted here to Pascal. Reading it
+    big-endian in Pascal, as done before, gave pressures 256 / 98.0665 = 2.61 times too high: the
+    vendor per-cell export matches the little-endian reading to 0.2 %.
+
     Parameters:
         buffer (bytes): raw calibration blob read from the mat
 
@@ -84,10 +105,10 @@ def generate_texisense_calibration_data(buffer):
         )
 
     num_steps = len(buffer) // CHUNK_SIZE
-    # pressure is big-endian: read little-endian the mat caps at 250 Pa, when its own software reports 9797 Pa
-    pressures = np.array(
-        [struct.unpack_from(">H", buffer, i * CHUNK_SIZE)[0] for i in range(num_steps)]
-    )
+    words = [
+        struct.unpack_from("<H", buffer, i * CHUNK_SIZE)[0] for i in range(num_steps)
+    ]
+    pressures = np.array(words, dtype=np.float64) * TEXISENSE_PRESSURE_UNIT_PA
     raws = np.array(
         [
             np.frombuffer(buffer, np.uint8, NUM_SENSORS, i * CHUNK_SIZE + 2)
@@ -141,14 +162,36 @@ def _phase_lut(pressures, raws):
     return lut
 
 
+def blend_phases(lut_asc, lut_desc, weight_asc, weight_desc):
+    """Mix the ascending and descending phase tables into the table used for the lookup.
+
+    This is the one place where the two phases are weighted: the metadata weights only have a
+    confirmed meaning for 0/0, read as 1/1, which is an even average - the average the vendor
+    per-cell export agrees with.
+
+    Parameters:
+        lut_asc (np.ndarray): table of the ascending phase, in Pascal
+        lut_desc (np.ndarray): table of the descending phase, in Pascal
+        weight_asc (float): weight of the ascending phase
+        weight_desc (float): weight of the descending phase
+
+    Returns:
+        np.ndarray: the weighted average of the two tables, in Pascal
+    """
+    return (weight_asc * lut_asc + weight_desc * lut_desc) / (weight_asc + weight_desc)
+
+
 def generate_lut(pressures, raws, weight_asc=1.0, weight_desc=1.0, threshold_pa=0.0):
     """Build the lookup table turning each sensor's raw response into a pressure in Pascal.
 
     The ascending and descending phases are interpolated separately and their two tables averaged,
     as prescribed by the manufacturer. Averaging the raw responses instead interleaves the steps of
     the two phases, whose pressure levels do not coincide, and breaks the monotonicity np.interp
-    relies on. The threshold is baked into the table rather than applied frame by frame: an unloaded
-    cell still answers a few LSB, and flooring them here costs nothing at lookup time.
+    relies on. Above the highest response a sensor gave on the bench, the pressure is extended in
+    proportion from the top step, P = P_top x raw / raw_top, as the vendor software does: prolonging
+    the slope of the last segment tripled the pressure of a cell loaded past its calibrated range.
+    The threshold is baked into the table rather than applied frame by frame: an unloaded cell
+    still answers a few LSB, and flooring them here costs nothing at lookup time.
 
     Parameters:
         pressures (np.ndarray): pressure of each calibration step, in Pascal
@@ -162,18 +205,59 @@ def generate_lut(pressures, raws, weight_asc=1.0, weight_desc=1.0, threshold_pa=
     """
     idx_max = int(np.argmax(pressures))
     asc, desc = slice(0, idx_max + 1), slice(idx_max, None)
-    total_weight = weight_asc + weight_desc
 
     lut = np.zeros((NUM_SENSORS, RAW_LEVELS), dtype=np.float32)
     for s in range(NUM_SENSORS):
-        lut[s] = (
-            weight_asc * _phase_lut(pressures[asc], raws[asc, s])
-            + weight_desc * _phase_lut(pressures[desc], raws[desc, s])
-        ) / total_weight
+        lut[s] = blend_phases(
+            _phase_lut(pressures[asc], raws[asc, s]),
+            _phase_lut(pressures[desc], raws[desc, s]),
+            weight_asc,
+            weight_desc,
+        )
+
+    ceiling = raws.max(axis=0).astype(np.float64)[:, None]
+    raw_range = np.arange(RAW_LEVELS)[None, :]
+    beyond = (raw_range > ceiling) & (ceiling > 0)
+    proportional = pressures.max() * raw_range / np.maximum(ceiling, 1)
+    lut = np.where(beyond, proportional, lut).astype(np.float32)
+    # the proportional line may start below the blended table at the ceiling: keep the table rising
+    lut = np.maximum.accumulate(lut, axis=1)
 
     if threshold_pa > 0:
         lut[lut < threshold_pa] = 0
     return lut
+
+
+def _kernel_sum(values):
+    """Sum every cell of a 2D map with its 8 neighbours, weighted by SMOOTHING_KERNEL.
+
+    Cells outside the map count as zero. The kernel is symmetric, so correlation and convolution
+    coincide and the result does not depend on the orientation of the map.
+    """
+    rows, cols = values.shape
+    padded = np.pad(np.asarray(values, dtype=np.float64), 1)
+    total = np.zeros((rows, cols))
+    for dr in range(3):
+        for dc in range(3):
+            total += SMOOTHING_KERNEL[dr, dc] * padded[dr : dr + rows, dc : dc + cols]
+    return total
+
+
+def smooth_pressure_map(pressure_map):
+    """Apply the vendor 3x3 smoothing to a calibrated pressure map.
+
+    Each cell becomes the average of itself (weight 3) and its 8 neighbours (weight 1). On the edges
+    and corners the sum is divided by the weights that fall inside the mat, not by the full 11, so
+    a uniform map stays uniform up to its border.
+
+    Parameters:
+        pressure_map (np.ndarray): 2D map of pressures, in Pascal
+
+    Returns:
+        np.ndarray: the smoothed map, same shape, float32, in Pascal
+    """
+    weights = _kernel_sum(np.ones(np.shape(pressure_map)))
+    return (_kernel_sum(pressure_map) / weights).astype(np.float32)
 
 
 def apply_texisense_calibration(raw_matrix, calibration_base64, metadata=None):
@@ -185,12 +269,24 @@ def apply_texisense_calibration(raw_matrix, calibration_base64, metadata=None):
         metadata (dict): texisense_metadata block of the mat, absent on every record already stored
             and on every mat not read since the firmware started reporting it
 
-    The orientation flags of the metadata are deliberately not applied: the mat already came out
-    the right way up, and their exact meaning is unknown - the manufacturer uses them to remap the
-    calibration blob, in code we do not have. They are stored, waiting for that answer.
+    The chain is the vendor one: lookup table per sensor, resting threshold (baked into the table,
+    so applied before smoothing), reordering into Texisense order, then the 3x3 smoothing. The
+    vendor software also zeroes the centre column 15 after the smoothing; we deliberately keep it,
+    so a load on that column differs from the vendor figures. The lookup is done per sensor,
+    before the reordering, which only moves cells of the calibrated map. Realtime and records both
+    decode through here, so they show the same map.
+
+    The output follows the vendor export ("1st at front-left, next at right"): out[r, c] with row
+    0 at the front of the mat and column 0 on its left, so flattening it row-major gives the
+    vendor cell k = r * 32 + c.
+
+    The orientation flags of the metadata are deliberately not applied: the Texisense order is
+    recovered from the vendor per-cell export, and the flags' exact meaning is unknown - the
+    manufacturer uses them to remap the calibration blob, in code we do not have. They are
+    stored, waiting for that answer.
 
     Returns:
-        np.ndarray: shape (32, 32) float32, in Pascal
+        np.ndarray: shape (32, 32) float32, in Pascal, in Texisense order
     """
     metadata = metadata or {}
     weight_asc, weight_desc, threshold_pa = read_lut_metadata(metadata)
@@ -207,5 +303,7 @@ def apply_texisense_calibration(raw_matrix, calibration_base64, metadata=None):
 
     lut = saved_luts[h]
     flat_raw = np.array(raw_matrix, dtype=np.int32).flatten()
-    calibrated_flat = lut[np.arange(NUM_SENSORS), flat_raw]
-    return calibrated_flat.reshape(MAT_SIZE, MAT_SIZE).transpose()
+    by_sensor = lut[np.arange(NUM_SENSORS), flat_raw].reshape(MAT_SIZE, MAT_SIZE)
+    # sensor rows run from the back of the mat: mirror them into Texisense order
+    calibrated = by_sensor[::-1]
+    return smooth_pressure_map(calibrated)
