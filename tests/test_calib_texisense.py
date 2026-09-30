@@ -150,6 +150,20 @@ class CalibTexisenseTest(unittest.TestCase):
         self.assertAlmostEqual(lut[0, 200], 4000.0, places=2)
         self.assertTrue(np.all(np.diff(lut, axis=1) >= 0))
 
+    def test_extrapolation_is_anchored_on_the_top_step(self):
+        """Review probe: raw 100 at the 3000 Pa peak, 110 at 2000 Pa on the way down.
+
+        The line P_top x raw / raw_top starts at raw_top = 100, the response at the peak, not at
+        the highest response of the sweep: raw 110 reads 3300 Pa, raw 111 3330 Pa, no plateau.
+        """
+        pressures = np.array([0.0, 3000.0, 2000.0, 0.0])
+        raws = np.tile(np.array([0, 100, 110, 0])[:, None], (1, NUM_SENSORS))
+        lut = generate_lut(pressures, raws)
+        self.assertAlmostEqual(lut[0, 100], 3000.0, places=2)
+        self.assertAlmostEqual(lut[0, 110], 3300.0, places=2)
+        self.assertAlmostEqual(lut[0, 111], 3330.0, places=2)
+        self.assertTrue(np.all(np.diff(lut[0, 1:]) > 0))
+
     def test_extrapolates_past_the_last_step(self):
         """Above the highest calibrated response the curve must keep rising, not plateau."""
         lut = generate_lut(*generate_texisense_calibration_data(self.buffer))

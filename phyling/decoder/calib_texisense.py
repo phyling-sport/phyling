@@ -125,11 +125,10 @@ def _phase_lut(pressures, raws):
     non-monotonic axis it returns silently wrong values. A (0, 0) anchor is added because a mat does
     not necessarily report a zero-pressure step, and a null response is pinned to 0 Pa instead of
     being averaged: a cell answering 0 reports no load detected, whatever the bench applied at that
-    step, so a cell still mute over the first steps must not inherit their mean. Past the highest
-    calibrated response the last slope is extended, to avoid the plateau the manufacturer warns
-    about - the further from that step, the less accurate the extrapolation. A sensor that saturates
-    answers the same value on several steps, so the averaged curve is forced non-decreasing rather
-    than left to dip and extrapolate downwards.
+    step, so a cell still mute over the first steps must not inherit their mean. A sensor that
+    saturates answers the same value on several steps, so the averaged curve is forced
+    non-decreasing rather than left to dip. Past the last response of the phase np.interp holds
+    the last pressure: generate_lut replaces everything above the top-step response anyway.
 
     Parameters:
         pressures (np.ndarray): pressure of each step of the phase, in Pascal
@@ -148,18 +147,7 @@ def _phase_lut(pressures, raws):
     # a saturated sensor answers the same value on several steps: averaging them must not make pressure drop
     uniq_press = np.maximum.accumulate(uniq_press)
 
-    raw_range = np.arange(RAW_LEVELS)
-    lut = np.interp(raw_range, uniq_raw, uniq_press)
-
-    if (
-        len(uniq_raw) >= 2
-        and uniq_raw[-1] < RAW_LEVELS - 1
-        and uniq_raw[-1] != uniq_raw[-2]
-    ):
-        slope = (uniq_press[-1] - uniq_press[-2]) / (uniq_raw[-1] - uniq_raw[-2])
-        beyond = raw_range > uniq_raw[-1]
-        lut[beyond] = uniq_press[-1] + slope * (raw_range[beyond] - uniq_raw[-1])
-    return lut
+    return np.interp(np.arange(RAW_LEVELS), uniq_raw, uniq_press)
 
 
 def blend_phases(lut_asc, lut_desc, weight_asc, weight_desc):
@@ -187,9 +175,13 @@ def generate_lut(pressures, raws, weight_asc=1.0, weight_desc=1.0, threshold_pa=
     The ascending and descending phases are interpolated separately and their two tables averaged,
     as prescribed by the manufacturer. Averaging the raw responses instead interleaves the steps of
     the two phases, whose pressure levels do not coincide, and breaks the monotonicity np.interp
-    relies on. Above the highest response a sensor gave on the bench, the pressure is extended in
-    proportion from the top step, P = P_top x raw / raw_top, as the vendor software does: prolonging
-    the slope of the last segment tripled the pressure of a cell loaded past its calibrated range.
+    relies on. Above raw_top, the response of a sensor at the highest pressure step P_top, the
+    pressure is extended in proportion, P = P_top x raw / raw_top, as the vendor software does:
+    prolonging the slope of the last segment tripled the pressure of a cell loaded past its
+    calibrated range. That line wins over both phases, even where hysteresis made the descending
+    phase answer above raw_top at a lower step: those points are dropped, not blended. The table
+    stays increasing without any clamp: at raw_top both phases hold the top step, so their blend
+    is at most P_top, below the line from raw_top + 1 on.
     The threshold is baked into the table rather than applied frame by frame: an unloaded cell
     still answers a few LSB, and flooring them here costs nothing at lookup time.
 
@@ -215,13 +207,11 @@ def generate_lut(pressures, raws, weight_asc=1.0, weight_desc=1.0, threshold_pa=
             weight_desc,
         )
 
-    ceiling = raws.max(axis=0).astype(np.float64)[:, None]
+    raw_top = raws[idx_max].astype(np.float64)[:, None]
     raw_range = np.arange(RAW_LEVELS)[None, :]
-    beyond = (raw_range > ceiling) & (ceiling > 0)
-    proportional = pressures.max() * raw_range / np.maximum(ceiling, 1)
+    beyond = (raw_range > raw_top) & (raw_top > 0)
+    proportional = pressures[idx_max] * raw_range / np.maximum(raw_top, 1)
     lut = np.where(beyond, proportional, lut).astype(np.float32)
-    # the proportional line may start below the blended table at the ceiling: keep the table rising
-    lut = np.maximum.accumulate(lut, axis=1)
 
     if threshold_pa > 0:
         lut[lut < threshold_pa] = 0
