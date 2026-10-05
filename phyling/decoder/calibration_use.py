@@ -99,6 +99,29 @@ def calibration_3D(data, cols, coef=None, offset=None):
     return data
 
 
+def texisense_calibration(calib, module, key="data"):
+    """Return the Texisense calibration the decoder applies to a module column, or None.
+
+    This is the very condition `calibration` uses to run the Texisense lookup: callers that need
+    to know whether a pressure mat was decoded in Pascal, rather than left in raw LSB, ask here
+    instead of guessing from the values.
+
+    Parameters:
+        calib (dict): calibration content, as passed to the decoder (may be empty or not a dict)
+        module (str): module name
+        key (str): data column of the module
+
+    Return:
+        dict: the calibration entry holding texisense_calib_base64, or None
+    """
+    if not isinstance(calib, dict) or not isinstance(calib.get(module), dict):
+        return None
+    entry = calib[module].get(key)
+    if isinstance(entry, dict) and "texisense_calib_base64" in entry:
+        return entry
+    return None
+
+
 def calibration(data, module, calib):
     """Calibrate the data from a module
 
@@ -130,7 +153,7 @@ def calibration(data, module, calib):
                     )
                 continue
             data = calibration_3D(data, cols, coef, offset)
-        elif key in data and "texisense_calib_base64" in calib[module][key]:
+        elif key in data and texisense_calibration(calib, module, key) is not None:
             data[key] = calib_texisense.apply_texisense_calibration(
                 data[key],
                 calibration_base64=calib[module][key]["texisense_calib_base64"],

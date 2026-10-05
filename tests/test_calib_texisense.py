@@ -13,12 +13,15 @@ from phyling.decoder.calib_texisense import get_calibration_fingerprint
 from phyling.decoder.calib_texisense import NUM_SENSORS
 from phyling.decoder.calib_texisense import RAW_LEVELS
 from phyling.decoder.calib_texisense import read_lut_metadata
+from phyling.decoder.calib_texisense import smooth_pressure_map
+from phyling.decoder.calib_texisense import TEXISENSE_PRESSURE_UNIT_PA
 
-MAX_PRESSURE = 64000
+MAX_UNITS = 650  # highest step, in gf/cm2: its word has a non-zero high byte
+MAX_PRESSURE = MAX_UNITS * TEXISENSE_PRESSURE_UNIT_PA
 NUM_STEPS = 12  # deliberately not the 45 steps of the mat we calibrated against
 
 
-def build_buffer(num_steps=NUM_STEPS, max_pressure=MAX_PRESSURE, saturate=False):
+def build_buffer(num_steps=NUM_STEPS, max_units=MAX_UNITS, saturate=False):
     """Build a synthetic calibration blob: a pressure sweep up then back down, saturating sensors.
 
     Each sensor gets its own gain so a lookup table mixed up between sensors shows up in the tests.
@@ -27,20 +30,20 @@ def build_buffer(num_steps=NUM_STEPS, max_pressure=MAX_PRESSURE, saturate=False)
 
     Parameters:
         num_steps (int): number of steps of the ascending phase
-        max_pressure (int): pressure of the highest step, in Pascal
+        max_units (int): pressure of the highest step, in gf/cm2 as the mat stores it
         saturate (bool): if True the top steps clip at 255, as a real mat does under heavy load
 
     Returns:
-        tuple: (buffer, pressures) with buffer the encoded blob and pressures the steps it holds
+        tuple: (buffer, pressures) with buffer the encoded blob and pressures its steps in Pascal
     """
-    up = [round(max_pressure * i / (num_steps - 1)) for i in range(num_steps)]
+    up = [round(max_units * i / (num_steps - 1)) for i in range(num_steps)]
     down = [round(p * 0.96) for p in reversed(up[:-1])]
-    pressures = up + down
+    units = up + down
 
     gains = 1.0 + 0.5 * np.arange(NUM_SENSORS) / NUM_SENSORS
     buffer = b""
-    for step, pressure in enumerate(pressures):
-        ratio = pressure / max_pressure
+    for step, unit in enumerate(units):
+        ratio = unit / max_units
         hysteresis = 1.0 if step < num_steps else 1.08
         full_scale = 340 if saturate else 170
         responses = (
@@ -48,8 +51,8 @@ def build_buffer(num_steps=NUM_STEPS, max_pressure=MAX_PRESSURE, saturate=False)
             .clip(0, 255)
             .astype(np.uint8)
         )
-        buffer += struct.pack(">H", pressure) + responses.tobytes()
-    return buffer, pressures
+        buffer += struct.pack("<H", unit) + responses.tobytes()
+    return buffer, [u * TEXISENSE_PRESSURE_UNIT_PA for u in units]
 
 
 class CalibTexisenseTest(unittest.TestCase):
@@ -62,11 +65,16 @@ class CalibTexisenseTest(unittest.TestCase):
         self.assertEqual(len(pressures), len(self.pressures))
         self.assertEqual(raws.shape, (len(self.pressures), NUM_SENSORS))
 
-    def test_pressure_is_big_endian(self):
-        """A little-endian read would divide every step by 256 and cap the mat at 250 Pa."""
+    def test_pressure_is_little_endian_gf_per_cm2(self):
+        """Each step is a little-endian word in gf/cm2, as the vendor per-cell export shows.
+
+        The former big-endian read in Pascal made the mat 256 / 98.0665 = 2.61 times too heavy.
+        """
         pressures, _ = generate_texisense_calibration_data(self.buffer)
-        self.assertEqual(pressures.max(), MAX_PRESSURE)
-        self.assertListEqual(list(pressures), self.pressures)
+        self.assertAlmostEqual(pressures.max(), 650 * 98.0665)
+        np.testing.assert_allclose(pressures, self.pressures)
+        big_endian = struct.unpack(">H", struct.pack("<H", MAX_UNITS))[0]
+        self.assertNotAlmostEqual(pressures.max(), big_endian)
 
     def test_rejects_truncated_buffer(self):
         with self.assertRaises(ValueError):
@@ -104,15 +112,57 @@ class CalibTexisenseTest(unittest.TestCase):
             np.median(np.abs(recovered - pressures[step])), 0.1 * MAX_PRESSURE
         )
 
-    def test_apply_transposes_the_matrix(self):
-        """The mat was already laid out the right way up before the calibration was fixed."""
+    def test_apply_reorders_then_smooths_the_matrix(self):
+        """The lookup is per sensor; the map is then mirrored into Texisense order and smoothed."""
         pressures, raws = generate_texisense_calibration_data(self.buffer)
         step = len(self.pressures) // 2
         raw_matrix = raws[step].reshape(32, 32)
         out = apply_texisense_calibration(raw_matrix, base64.b64encode(self.buffer))
         lut = generate_lut(pressures, raws)
-        expected = lut[np.arange(NUM_SENSORS), raws[step]].reshape(32, 32).transpose()
-        np.testing.assert_allclose(out, expected, rtol=1e-5)
+        mapped = lut[np.arange(NUM_SENSORS), raws[step]].reshape(32, 32)[::-1]
+        np.testing.assert_allclose(out, smooth_pressure_map(mapped), rtol=1e-5)
+
+    def test_output_is_in_texisense_order(self):
+        """Sensor s lands on Texisense cell (r, c) = (31 - s // 32, s % 32), front-left first."""
+        pressures, raws = generate_texisense_calibration_data(self.buffer)
+        lut = generate_lut(pressures, raws)
+        for sensor in (0, 31, 32 * 31, 10 * 32 + 12):
+            raw_matrix = np.zeros((32, 32), dtype=int)
+            raw_matrix.flat[sensor] = 200
+            out = apply_texisense_calibration(raw_matrix, base64.b64encode(self.buffer))
+            r, c = 31 - sensor // 32, sensor % 32
+            self.assertEqual(np.unravel_index(np.argmax(out), out.shape), (r, c))
+            weight = 6 if r in (0, 31) and c in (0, 31) else 11
+            weight = 8 if weight == 11 and (r in (0, 31) or c in (0, 31)) else weight
+            self.assertAlmostEqual(out[r, c], 3 * lut[sensor, 200] / weight, delta=0.1)
+
+    def test_extrapolates_in_proportion_past_the_bench_ceiling(self):
+        """Above its highest bench response a sensor reads P_top x raw / raw_top.
+
+        Prolonging the last segment instead gave 97 398 Pa on a cell the vendor reads 33 346 Pa.
+        Here the last segments would give 7000 Pa (ascending) and 4500 Pa (descending) at raw 200.
+        """
+        pressures = np.array([0.0, 1000.0, 2000.0, 1000.0, 0.0])
+        raws = np.tile(np.array([0, 80, 100, 60, 0])[:, None], (1, NUM_SENSORS))
+        lut = generate_lut(pressures, raws)
+        self.assertAlmostEqual(lut[0, 100], 2000.0, places=2)
+        self.assertAlmostEqual(lut[0, 150], 3000.0, places=2)
+        self.assertAlmostEqual(lut[0, 200], 4000.0, places=2)
+        self.assertTrue(np.all(np.diff(lut, axis=1) >= 0))
+
+    def test_extrapolation_is_anchored_on_the_top_step(self):
+        """Review probe: raw 100 at the 3000 Pa peak, 110 at 2000 Pa on the way down.
+
+        The line P_top x raw / raw_top starts at raw_top = 100, the response at the peak, not at
+        the highest response of the sweep: raw 110 reads 3300 Pa, raw 111 3330 Pa, no plateau.
+        """
+        pressures = np.array([0.0, 3000.0, 2000.0, 0.0])
+        raws = np.tile(np.array([0, 100, 110, 0])[:, None], (1, NUM_SENSORS))
+        lut = generate_lut(pressures, raws)
+        self.assertAlmostEqual(lut[0, 100], 3000.0, places=2)
+        self.assertAlmostEqual(lut[0, 110], 3300.0, places=2)
+        self.assertAlmostEqual(lut[0, 111], 3330.0, places=2)
+        self.assertTrue(np.all(np.diff(lut[0, 1:]) > 0))
 
     def test_extrapolates_past_the_last_step(self):
         """Above the highest calibrated response the curve must keep rising, not plateau."""
@@ -155,12 +205,10 @@ class CalibTexisenseMetadataTest(unittest.TestCase):
         self.raw_matrix = self.raws[self.step].reshape(32, 32)
 
     def _legacy_output(self):
-        """The output of the calibration as it behaved before metadata existed."""
+        """The output of the calibration as it behaves without metadata."""
         lut = generate_lut(self.pressures, self.raws)
-        return (
-            lut[np.arange(NUM_SENSORS), self.raws[self.step]]
-            .reshape(32, 32)
-            .transpose()
+        return smooth_pressure_map(
+            lut[np.arange(NUM_SENSORS), self.raws[self.step]].reshape(32, 32)[::-1]
         )
 
     def test_missing_metadata_keeps_legacy_output(self):
@@ -198,12 +246,21 @@ class CalibTexisenseMetadataTest(unittest.TestCase):
         asc_only = generate_lut(self.pressures, self.raws, weight_asc=1, weight_desc=0)
         desc_only = generate_lut(self.pressures, self.raws, weight_asc=0, weight_desc=1)
         even = generate_lut(self.pressures, self.raws)
+        weighted = generate_lut(self.pressures, self.raws, weight_asc=3, weight_desc=1)
+        # compare within the range both phases calibrate, before any extrapolation
+        top = int(np.argmax(self.pressures))
+        in_range = (
+            np.arange(RAW_LEVELS)[None, :]
+            <= np.minimum(
+                self.raws[: top + 1].max(axis=0), self.raws[top:].max(axis=0)
+            )[:, None]
+        )
         self.assertGreater(np.abs(asc_only - desc_only).max(), 0.01 * MAX_PRESSURE)
-        np.testing.assert_allclose(even, (asc_only + desc_only) / 2, rtol=1e-5)
         np.testing.assert_allclose(
-            generate_lut(self.pressures, self.raws, weight_asc=3, weight_desc=1),
-            (3 * asc_only + desc_only) / 4,
-            rtol=1e-5,
+            even[in_range], ((asc_only + desc_only) / 2)[in_range], rtol=1e-5
+        )
+        np.testing.assert_allclose(
+            weighted[in_range], ((3 * asc_only + desc_only) / 4)[in_range], rtol=1e-5
         )
 
     def test_both_weights_zero_falls_back_to_an_even_average(self):
@@ -214,18 +271,42 @@ class CalibTexisenseMetadataTest(unittest.TestCase):
 
     def test_threshold_zeroes_below_and_keeps_above(self):
         threshold = 5000
-        # a sweep over the whole raw range, so cells land on both sides of the threshold
-        raw_matrix = (np.arange(NUM_SENSORS) % RAW_LEVELS).reshape(32, 32)
+        floored = generate_lut(self.pressures, self.raws, threshold_pa=threshold)
+        reference = generate_lut(self.pressures, self.raws)
+        self.assertTrue(np.all((floored == 0) | (floored >= threshold)))
+        above = reference >= threshold
+        np.testing.assert_array_equal(floored[above], reference[above])
+        self.assertTrue(np.all(floored[~above] == 0))
+        self.assertGreater((~above).sum(), 0)
+
+    def test_threshold_applies_before_smoothing(self):
+        """The floor acts on each cell in true Pascal, then the smoothing spreads what is left.
+
+        A loaded cell surrounded by cells under the floor leaves a halo of 1/11 of its pressure,
+        below the floor: flooring after the smoothing would erase it, as the vendor does not.
+        """
+        threshold = 5000
+        lut = generate_lut(self.pressures, self.raws)
+        sensor = 10 * 32 + 12
+        high = int(np.argmax(lut[sensor] >= 4 * threshold))
+        low = int(np.argmax(lut[sensor] >= threshold / 2))
+        self.assertLess(lut[sensor, low], threshold)
+        raw_matrix = np.full((32, 32), low)
+        raw_matrix[10, 12] = high
         out = apply_texisense_calibration(
             raw_matrix, self.b64, metadata={"threshold_pa": threshold}
         )
-        reference = apply_texisense_calibration(raw_matrix, self.b64)
-        self.assertTrue(np.all((out == 0) | (out >= threshold)))
-        np.testing.assert_array_equal(
-            out[reference >= threshold], reference[reference >= threshold]
+        floored = generate_lut(self.pressures, self.raws, threshold_pa=threshold)
+        mapped = floored[np.arange(NUM_SENSORS), raw_matrix.flatten()]
+        np.testing.assert_allclose(
+            out, smooth_pressure_map(mapped.reshape(32, 32)[::-1]), rtol=1e-5
         )
-        self.assertTrue(np.all(out[reference < threshold] == 0))
-        self.assertGreater((reference < threshold).sum(), 0)
+        # the loaded sensor 10 * 32 + 12 lands on Texisense cell (21, 12)
+        self.assertAlmostEqual(out[21, 12], 3 * floored[sensor, high] / 11, delta=0.1)
+        self.assertAlmostEqual(out[20, 12], floored[sensor, high] / 11, delta=0.1)
+        self.assertGreater(out[20, 12], 0)
+        self.assertLess(out[20, 12], threshold)
+        self.assertEqual(out[0, 0], 0)
 
     def test_missing_threshold_applies_no_floor(self):
         metadata = {k: v for k, v in FULL_METADATA.items() if k != "threshold_pa"}
@@ -233,7 +314,7 @@ class CalibTexisenseMetadataTest(unittest.TestCase):
         np.testing.assert_array_equal(out, self._legacy_output())
 
     def test_orientation_ignores_the_metadata_flags(self):
-        """The mat was already displayed the right way up: the flags are stored, never applied."""
+        """The Texisense order comes from the vendor export: the flags are stored, never applied."""
         expected = self._legacy_output()
         for flags in (
             {},
@@ -280,3 +361,57 @@ class CalibTexisenseMetadataTest(unittest.TestCase):
         )
         self.assertEqual(out.shape, (32, 32))
         np.testing.assert_array_equal(out, expected)
+
+
+class CentreColumnTest(unittest.TestCase):
+    """Column 15, zeroed by the vendor software, is kept and smoothed like any other."""
+
+    def test_load_on_the_centre_column_is_kept_and_spreads(self):
+        buffer, _ = build_buffer()
+        pressures, raws = generate_texisense_calibration_data(buffer)
+        lut = generate_lut(pressures, raws)
+        raw_matrix = np.zeros((32, 32), dtype=int)
+        sensor = (31 - 20) * 32 + 15
+        raw_matrix.flat[sensor] = 200
+        out = apply_texisense_calibration(raw_matrix, base64.b64encode(buffer))
+        self.assertAlmostEqual(out[20, 15], 3 * lut[sensor, 200] / 11, delta=0.1)
+        for r in (19, 20, 21):
+            for c in (14, 16):
+                self.assertAlmostEqual(out[r, c], lut[sensor, 200] / 11, delta=0.1)
+        self.assertEqual(np.count_nonzero(out), 9)
+
+
+class SmoothingTest(unittest.TestCase):
+    """The vendor 3x3 smoothing: kernel [[1, 1, 1], [1, 3, 1], [1, 1, 1]], edge-renormalised."""
+
+    def test_centre_cell_spreads_over_its_neighbours(self):
+        mat = np.zeros((32, 32))
+        mat[10, 20] = 1100.0
+        out = smooth_pressure_map(mat)
+        self.assertAlmostEqual(out[10, 20], 300.0, places=3)
+        for dr in (-1, 0, 1):
+            for dc in (-1, 0, 1):
+                if dr or dc:
+                    self.assertAlmostEqual(out[10 + dr, 20 + dc], 100.0, places=3)
+        self.assertAlmostEqual(out.sum(), 1100.0, places=2)
+        self.assertEqual(np.count_nonzero(out), 9)
+
+    def test_edges_divide_by_the_weights_inside_the_mat(self):
+        mat = np.zeros((32, 32))
+        mat[0, 0] = 600.0
+        out = smooth_pressure_map(mat)
+        # corner: 3 + 3 neighbours inside the mat = 6
+        self.assertAlmostEqual(out[0, 0], 300.0, places=3)
+        # edge cell next to the corner: 3 + 5 neighbours inside the mat = 8
+        self.assertAlmostEqual(out[0, 1], 75.0, places=3)
+        self.assertAlmostEqual(out[1, 0], 75.0, places=3)
+        # inner cell next to the corner: full kernel, 11
+        self.assertAlmostEqual(out[1, 1], 600.0 / 11, places=3)
+
+    def test_uniform_map_stays_uniform(self):
+        """Renormalising on the border keeps a uniform load uniform, corners included."""
+        out = smooth_pressure_map(np.full((32, 32), 2500.0))
+        np.testing.assert_allclose(out, 2500.0, rtol=1e-6)
+
+    def test_output_is_float32(self):
+        self.assertEqual(smooth_pressure_map(np.ones((32, 32))).dtype, np.float32)
