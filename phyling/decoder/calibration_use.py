@@ -63,6 +63,25 @@ def calibration_1D(data, coef=None, offset=None):
     return coef * (data + offset)
 
 
+def calibration_1D_to_raw(data, coef=None, offset=None):
+    """Undo calibration_1D: get back raw data from calibrated data.
+
+    Parameters:
+        data (float): calibrated data (scalar, array or Series)
+        coef (float): calibration coefficient applied to data
+        offset (float): calibration offset applied to data
+    Return:
+        raw data, same type as data
+    """
+    if coef is None:
+        coef = 1
+    elif coef == 0:
+        raise ValueError(f"Cannot undo a calibration with a null coef: {coef!r}")
+    if offset is None:
+        offset = 0
+    return data / coef - offset
+
+
 def calibration_3D(data, cols, coef=None, offset=None):
     """
     Parameters:
@@ -356,7 +375,7 @@ def time_correction_v2(mod_data: dict, mod: str):
                 # 0.003 is the mean time btw notif sent on mini and receive on maxi
                 logging.info(
                     f"{mod}: Applied time offset: {appliedDiff * 1000:4.1f}ms "
-                    f"from T {int(T[ind[i]])}s to {int(T[ind[i + 1]-1])}s"
+                    f"from T {int(T[ind[i]])}s to {int(T[ind[i + 1] - 1])}s"
                 )
         else:
             logging.warning(
