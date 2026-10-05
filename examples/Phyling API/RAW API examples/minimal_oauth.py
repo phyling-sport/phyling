@@ -9,11 +9,11 @@ Installation et exécution :
 
 Then open http://localhost:2000/ in your browser.
 """  # noqa: E501
+
 import argparse
 import secrets
 import sys
 from typing import Any
-from typing import Dict
 from urllib.parse import urlencode
 
 import requests
@@ -123,7 +123,7 @@ MINIMAL_TEMPLATE = """<!DOCTYPE html>
 """
 
 
-def create_app(config: Dict[str, Any]) -> Flask:
+def create_app(config: dict[str, Any]) -> Flask:
     app = Flask(__name__)
     app.secret_key = "secretkeyforflasksession"
     app.config["DEMO"] = config
@@ -171,16 +171,12 @@ def create_app(config: Dict[str, Any]) -> Flask:
 
         if not code:
             return (
-                render_template_string(
-                    ERROR_TEMPLATE, message="Missing authorization code"
-                ),
+                render_template_string(ERROR_TEMPLATE, message="Missing authorization code"),
                 400,
             )
         if not incoming_state or incoming_state not in pending_states:
             return (
-                render_template_string(
-                    ERROR_TEMPLATE, message="Invalid or missing state"
-                ),
+                render_template_string(ERROR_TEMPLATE, message="Invalid or missing state"),
                 400,
             )
         pending_states.discard(incoming_state)
@@ -202,16 +198,12 @@ def create_app(config: Dict[str, Any]) -> Flask:
             payload = token_resp.json()
         except requests.RequestException as exc:
             return (
-                render_template_string(
-                    ERROR_TEMPLATE, message=f"Token request failed: {exc}"
-                ),
+                render_template_string(ERROR_TEMPLATE, message=f"Token request failed: {exc}"),
                 502,
             )
         except ValueError:
             return (
-                render_template_string(
-                    ERROR_TEMPLATE, message="Token response is not JSON"
-                ),
+                render_template_string(ERROR_TEMPLATE, message="Token response is not JSON"),
                 502,
             )
 
@@ -225,9 +217,7 @@ def create_app(config: Dict[str, Any]) -> Flask:
                 502,
             )
 
-        realtime_client_id = payload.get("user", {}).get("client_id") or cfg.get(
-            "fallback_client_id"
-        )
+        realtime_client_id = payload.get("user", {}).get("client_id") or cfg.get("fallback_client_id")
         if realtime_client_id is None:
             return (
                 render_template_string(
@@ -253,23 +243,15 @@ def create_app(config: Dict[str, Any]) -> Flask:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Mini démonstration OAuth + Socket.IO Phyling"
-    )
+    parser = argparse.ArgumentParser(description="Mini démonstration OAuth + Socket.IO Phyling")
     parser.add_argument(
         "--api-url",
         required=True,
         help="URL de base de l'API Phyling (ex: http://localhost:5001)",
     )
-    parser.add_argument(
-        "--client-id", required=True, help="Client ID OAuth fourni par Phyling"
-    )
-    parser.add_argument(
-        "--client-secret", required=True, help="Client secret OAuth fourni par Phyling"
-    )
-    parser.add_argument(
-        "--port", type=int, default=2000, help="Port local d'écoute (callback sur /)"
-    )
+    parser.add_argument("--client-id", required=True, help="Client ID OAuth fourni par Phyling")
+    parser.add_argument("--client-secret", required=True, help="Client secret OAuth fourni par Phyling")
+    parser.add_argument("--port", type=int, default=2000, help="Port local d'écoute (callback sur /)")
     parser.add_argument(
         "--device-number",
         type=int,

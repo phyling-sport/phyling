@@ -18,10 +18,10 @@ class User:
         Return a string description of the user.
         """
         return f"""User(
-    id={self['id']},
-    mail={self['mail']},
-    firstname={self['firstname']},
-    lastname={self['lastname']},
+    id={self["id"]},
+    mail={self["mail"]},
+    firstname={self["firstname"]},
+    lastname={self["lastname"]},
 )"""
 
     def __repr__(self) -> str:

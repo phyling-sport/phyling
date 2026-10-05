@@ -21,17 +21,17 @@ class Record:
         for user in self["users"]:
             user_names.append(user["firstname"] + " " + user["lastname"])
         return f"""Record(
-    id={self['id']},
-    date={self['date']},
-    record_type={self['record_type']},
-    decode_state={self['decode_state']},
-    client_id={self['client_id']},
-    group_id={self['group_id']},  # {self['group_name']}
-    user_ids={self['user_ids']},  # {", ".join(user_names)}
-    sport_id={self['sport_id']},  # {self['sport_disp_name']}
-    device_id={self['device_id']},  # {self['device_name']}
-    exercise_name={self['exercise_name']},
-    size={self['size']},
+    id={self["id"]},
+    date={self["date"]},
+    record_type={self["record_type"]},
+    decode_state={self["decode_state"]},
+    client_id={self["client_id"]},
+    group_id={self["group_id"]},  # {self["group_name"]}
+    user_ids={self["user_ids"]},  # {", ".join(user_names)}
+    sport_id={self["sport_id"]},  # {self["sport_disp_name"]}
+    device_id={self["device_id"]},  # {self["device_name"]}
+    exercise_name={self["exercise_name"]},
+    size={self["size"]},
 )"""
 
     def __repr__(self) -> str:
