@@ -24,6 +24,15 @@ LAST_EPOCH_US_DICT = "__last_epoch_us__"
 MAX_TIME_JUMP_SEC = 3600 * 24 * 2  # generous vs. legitimate module gaps, tiny vs. a corrupted (~millions of years) T
 MAX_FIRST_T_SEC = 3600 * 24 * 35  # bootstrap bound: above the ~30-day record objective, tiny vs. a corrupted T
 
+# Units of the Mini GPS fields (mirrors firmware MiniGpsModule GPS_FIELD_UNITS), keyed by bare field name
+MINI_GPS_FIELD_UNITS = {
+    "gpstimeUs": "us",
+    "gpsTimeAccuracyNs": "ns",
+    "speed": "m/s",
+    "altitude": "m",
+    "heading": "deg",
+}
+
 try:
     from phylingUtils.data_layer.s3 import S3
 except Exception:
@@ -242,6 +251,9 @@ cpdef void normalizeModuleFields(dict header):
     Compact entries are converted in place to the dict form so all downstream code stays unchanged.
     Disambiguation is done on the type of the first entry (dict -> legacy, list -> compact); empty
     field lists are left untouched. Idempotent: re-running on an already-normalized header is a no-op.
+
+    Mini GPS fields relayed by a Maxi / Phyling-LTE ("gps_"-prefixed, in miniphyling / nanophyling / ble
+    modules) are declared over BLE without a unit, so their known units are filled in when missing.
     """
     cdef object mod
     cdef object fields
@@ -257,16 +269,19 @@ cpdef void normalizeModuleFields(dict header):
         fields = mod["description"]
         if not isinstance(fields, list) or len(fields) == 0:
             continue
-        if not isinstance(fields[0], (list, tuple)):
-            continue  # already in legacy dict form -> nothing to do
-        normalized = []
-        for entry in fields:
-            normalized.append({
-                "name": entry[0],
-                "type": entry[1],
-                "unit": entry[2] if len(entry) > 2 else "",
-            })
-        mod["description"] = normalized
+        if isinstance(fields[0], (list, tuple)):
+            normalized = []
+            for entry in fields:
+                normalized.append({
+                    "name": entry[0],
+                    "type": entry[1],
+                    "unit": entry[2] if len(entry) > 2 else "",
+                })
+            mod["description"] = fields = normalized
+        if mod.get("type") in ("miniphyling", "nanophyling", "ble"):
+            for entry in fields:
+                if isinstance(entry, dict) and not entry.get("unit") and entry.get("name", "").startswith("gps_"):
+                    entry["unit"] = MINI_GPS_FIELD_UNITS.get(entry["name"][4:], "")
 
 
 cpdef void setup_header(dict header):
