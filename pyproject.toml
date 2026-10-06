@@ -52,6 +52,8 @@ skip = ["*-musllinux_*"]
 test-sources = ["tests"]
 test-requires = ["pytest"]
 test-command = "python -m pytest -q tests"
+# bleak's winrt-* dependencies have no cp315 wheel yet and fail to build: the wheel is built, its test is skipped
+test-skip = ["cp315-win*"]
 
 [tool.cibuildwheel.linux]
 archs = ["native"]
