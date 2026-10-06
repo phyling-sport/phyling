@@ -1,10 +1,6 @@
-# This workflow will upload a Python Package to PyPI when a release is created
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python#publishing-to-package-registries
-
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
+# Build the sdist and the binary wheels (cibuildwheel, config in pyproject.toml [tool.cibuildwheel]),
+# then upload everything to PyPI with trusted publishing when a tag is pushed.
+# Manual runs build the wheels only, or also upload them to TestPyPI (publish: testpypi).
 
 name: Upload Python Package
 
@@ -12,13 +8,46 @@ on:
   push:
     tags:
       - '*'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Upload target for a manual run"
+        type: choice
+        options: [none, testpypi]
+        default: none
 
 permissions:
   contents: read
 
 jobs:
-  release-build:
-    runs-on: ubuntu-latest
+  build-wheels:
+    name: Wheels ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Linux x86_64, Linux aarch64, macOS arm64, Windows x86_64
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, windows-2025]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build and test wheels
+        uses: pypa/cibuildwheel@v4.2.1
+        with:
+          output-dir: wheelhouse
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dists-${{ matrix.os }}
+          path: wheelhouse/*.whl
+
+  build-sdist:
+    name: Sdist
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v4
@@ -27,47 +56,71 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.11"
 
-      - name: Build release distributions
+      - name: Build sdist
         run: |
-          # NOTE: put your own distribution build steps here.
           python -m pip install build
           python -m build --sdist
 
-      - name: Upload distributions
+      - name: Upload sdist
         uses: actions/upload-artifact@v4
         with:
-          name: release-dists
-          path: dist/
+          name: release-dists-sdist
+          path: dist/*.tar.gz
 
   pypi-publish:
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     needs:
-      - release-build
+      - build-wheels
+      - build-sdist
     permissions:
       # IMPORTANT: this permission is mandatory for trusted publishing
       id-token: write
 
-    # Dedicated environments with protections for publishing are strongly recommended.
-    # For more information, see: https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment#deployment-protection-rules
     environment:
       name: pypi
-      # OPTIONAL: uncomment and update to include your PyPI project URL in the deployment status:
-      url: https://pypi.org/p/YOURPROJECT
-      #
-      # ALTERNATIVE: if your GitHub Release name is the PyPI project version string
-      # ALTERNATIVE: exactly, uncomment the following line instead:
-      # url: https://pypi.org/project/YOURPROJECT/${{ github.event.release.name }}
+      url: https://pypi.org/p/phyling
 
     steps:
       - name: Retrieve release distributions
         uses: actions/download-artifact@v4
         with:
-          name: release-dists
+          pattern: release-dists-*
+          merge-multiple: true
           path: dist/
 
       - name: Publish release distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+
+  testpypi-publish:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && inputs.publish == 'testpypi'
+    needs:
+      - build-wheels
+      - build-sdist
+    permissions:
+      id-token: write
+
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/phyling
+
+    steps:
+      - name: Retrieve release distributions
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-dists-*
+          merge-multiple: true
+          path: dist/
+
+      # Dev versions (setuptools-scm) repeat between runs on the same commit
+      - name: Publish distributions to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
