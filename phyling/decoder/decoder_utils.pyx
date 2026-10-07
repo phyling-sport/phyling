@@ -886,6 +886,8 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
         filename, verbose=verbose, startingTime=start, use_s3=use_s3, record=record,
     )
     setup_header(header)
+    # validated once here: loadOne swallows per-frame exceptions and would hide a bad coef behind "Missing some data"
+    calibration = calib.normalize_calibration(calibration)
     logging.info("start decoding file")
     cdef int curPos = 0
     cdef dict jsonData = {

@@ -4,6 +4,7 @@ import struct
 import tempfile
 import unittest
 
+from phyling.decoder.decoder_utils import decode
 from phyling.decoder.decoder_utils import loadFile
 from phyling.decoder.realtime_record import assemble_frames
 from phyling.decoder.realtime_record import build_data_txt
@@ -113,6 +114,17 @@ class TestDataTxt(unittest.TestCase):
         self.assertEqual(loaded_header, build_description(header))
         self.assertEqual(loaded_calib, calibration)
         self.assertEqual(content, frames)
+
+    def test_decode_refuses_invalid_calibration(self):
+        """A string coef in the header fails the decode with an explicit error, not float('') per frame."""
+        calibration = {"imu": {"acc_x": {"coef": "", "offset": 0}}}
+        frames = b"".join(imu_frame(i) for i in range(50))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "data.txt")
+            with open(path, "wb") as f:
+                f.write(build_data_txt(make_header(), calibration, frames))
+            with self.assertRaisesRegex(ValueError, r"^Invalid calibration imu\.acc_x\.coef: ''$"):
+                decode(path, verbose=False, use_s3=False)
 
 
 if __name__ == "__main__":
