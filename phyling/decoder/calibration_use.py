@@ -46,6 +46,60 @@ def get_calib_3d_cols(group, cols):
     return None
 
 
+CALIB_NUMERIC_KEYS = ("coef", "offset")
+
+
+def _normalize_calib_value(value, path):
+    """Convert a coef/offset value (scalar or nested lists) to numbers, raise ValueError if not numeric."""
+    if value is None or isinstance(value, (int, float, np.number)):
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_normalize_calib_value(item, path) for item in value]
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            pass
+    raise ValueError(f"Invalid calibration {path}: {value!r}")
+
+
+def normalize_calibration(calibration):
+    """Validate the numeric entries of a calibration and convert numeric strings to float.
+
+    Every `coef` / `offset` of a `{module: {field: {...}}}` entry (scalar, 3D list or matrix) must be a
+    number: a numeric string such as `"0.5"` is converted to float, anything else (empty string, text,
+    nested object) raises. Other keys (texisense base64, algo params, units...) are left untouched.
+
+    Parameters:
+        calibration (dict | None): calibration content, as read from the record header
+
+    Return:
+        dict | None: a normalized copy of the calibration (None if None was given)
+
+    Raises:
+        ValueError: on a non-numeric coef/offset, naming `module.field.key` and the value
+    """
+    if calibration is None:
+        return None
+    if not isinstance(calibration, dict):
+        raise ValueError(f"Invalid calibration: expected a JSON object, got {type(calibration).__name__}")
+
+    normalized = {}
+    for module, fields in calibration.items():
+        if not isinstance(fields, dict):
+            normalized[module] = fields
+            continue
+        normalized[module] = {}
+        for field, entry in fields.items():
+            if isinstance(entry, dict) and any(key in entry for key in CALIB_NUMERIC_KEYS):
+                entry = dict(entry)
+                for key in CALIB_NUMERIC_KEYS:
+                    if key in entry:
+                        entry[key] = _normalize_calib_value(entry[key], f"{module}.{field}.{key}")
+            normalized[module][field] = entry
+    return normalized
+
+
 def calibration_1D(data, coef=None, offset=None):
     """
     Parameters:
