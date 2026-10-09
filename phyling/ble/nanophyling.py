@@ -1,5 +1,4 @@
 from typing import Any
-from typing import Union
 
 import ujson
 from bleak import BleakClient
@@ -19,13 +18,12 @@ NANO_DEF_CONFIG = {
 
 
 class NanoPhyling(BaseDevice):
-
     def __init__(
         self,
-        ble_name: Union[str, None],
-        address: Union[str, None] = None,
+        ble_name: str | None,
+        address: str | None = None,
         config: dict[str, Any] = NANO_DEF_CONFIG,
-        module_name: Union[str, None] = None,
+        module_name: str | None = None,
     ):
         """
         BLE client for Nano-Phyling devices. Provide ble_name OR address.

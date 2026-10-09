@@ -1,5 +1,4 @@
 import re
-from typing import Union
 
 from bleak import BleakClient
 
@@ -28,12 +27,11 @@ def _validate_crc8(data: bytes) -> bool:
 
 
 class MiniPhyling(BaseDevice):
-
     def __init__(
         self,
-        ble_name: Union[str, None],
-        address: Union[str, None] = None,
-        module_name: Union[str, None] = None,
+        ble_name: str | None,
+        address: str | None = None,
+        module_name: str | None = None,
     ):
         """
         BLE client for Mini-Phyling devices. Provide ble_name OR address.
@@ -76,9 +74,7 @@ class MiniPhyling(BaseDevice):
 
             self.config["data"] = [c[0] for c in columns]
             # Same helper as NanoPhyling, but with the actual type from device config
-            self._col_specs = [
-                _make_col_spec(col_name, type_char) for col_name, type_char in columns
-            ]
+            self._col_specs = [_make_col_spec(col_name, type_char) for col_name, type_char in columns]
             self._oneDataSize = sum(s["size"] for s in self._col_specs)
 
             # Read rate and bufferSize from INFOS characteristic

@@ -17,9 +17,7 @@ MAXI_RING_BYTES = 50 * 4096
 SOCKET_HEADER = b"\x01\x3c\x00\x05\x00"
 
 
-def make_header(
-    version: str = "v7.0.0", imu_rate: float = 100, gps_rate: float = 10
-) -> dict:
+def make_header(version: str = "v7.0.0", imu_rate: float = 100, gps_rate: float = 10) -> dict:
     """Build a recDescription with an IMU and a GPS module."""
     return {
         "description": {"version": version, "epochUs": EPOCH_US},
@@ -37,9 +35,7 @@ def imu_frame(i: int) -> bytes:
 
 def gps_frame(i: int) -> bytes:
     """Return the i-th GPS frame of a 10 Hz stream."""
-    return struct.pack(
-        "<Bq6f", GPS_ID, EPOCH_US + i * 100_000, 45.0, 5.0, 3.0, 100.0, 1.2, float(i)
-    )
+    return struct.pack("<Bq6f", GPS_ID, EPOCH_US + i * 100_000, 45.0, 5.0, 3.0, 100.0, 1.2, float(i))
 
 
 def payload(frames: list) -> bytes:
@@ -88,9 +84,7 @@ class TablesTest(unittest.TestCase):
         window = build_window_us(make_header(), LTE_RING_BYTES)
         self.assertEqual(window, int(2 * LTE_RING_BYTES / throughput * 1e6))
         self.assertAlmostEqual(window / 1e6, 28.03, places=1)
-        self.assertAlmostEqual(
-            build_window_us(make_header(), MAXI_RING_BYTES) / 1e6, 155.7, places=1
-        )
+        self.assertAlmostEqual(build_window_us(make_header(), MAXI_RING_BYTES) / 1e6, 155.7, places=1)
 
     def test_state_bounded_by_the_ring_capacity_in_frames(self):
         dedup = RealtimeDedup(make_header(), LTE_RING_BYTES)
@@ -106,9 +100,7 @@ class TablesTest(unittest.TestCase):
         self.assertIs(dedup.filter(data), data)
 
     def test_no_rate_at_all_disables_dedup(self):
-        self.assertEqual(
-            build_window_us(make_header(imu_rate=0, gps_rate=0), LTE_RING_BYTES), 0
-        )
+        self.assertEqual(build_window_us(make_header(imu_rate=0, gps_rate=0), LTE_RING_BYTES), 0)
         self.assertEqual(
             RealtimeDedup(make_header(imu_rate=0, gps_rate=0), LTE_RING_BYTES).modules,
             {},
@@ -153,9 +145,7 @@ class DedupTest(unittest.TestCase):
             if i % 10 == 0:
                 stream.append(gps_frame(i // 10))
         lte = [(p, LINK_B64) for p in chunk(stream, rng, 60)]
-        wifi = [
-            (p, LINK_RAW) for p in chunk(stream[100:], rng, 7)
-        ]  # WiFi joins late, finer chunks
+        wifi = [(p, LINK_RAW) for p in chunk(stream[100:], rng, 7)]  # WiFi joins late, finer chunks
         arrivals = lte + wifi
         rng.shuffle(arrivals)
         received = []
@@ -167,9 +157,7 @@ class DedupTest(unittest.TestCase):
     def test_ring_replay_of_a_single_device(self):
         """A Maxi replays its own ring newest-first on the binary topic: every replayed frame is dropped."""
         dedup = RealtimeDedup(make_header(), MAXI_RING_BYTES)
-        chunks = [
-            payload([imu_frame(i) for i in range(k, k + 20)]) for k in range(0, 400, 20)
-        ]
+        chunks = [payload([imu_frame(i) for i in range(k, k + 20)]) for k in range(0, 400, 20)]
         for data in chunks:
             dedup.filter(data, LINK_RAW)
         for data in reversed(chunks[5:]):
@@ -192,9 +180,7 @@ class DedupTest(unittest.TestCase):
 
     def test_unknown_id_stops_the_split(self):
         self.dedup.filter(payload([imu_frame(0), imu_frame(1)]))
-        rest = (
-            b"\x07" + imu_frame(0) + imu_frame(1)
-        )  # the duplicates after the garbage byte pass
+        rest = b"\x07" + imu_frame(0) + imu_frame(1)  # the duplicates after the garbage byte pass
         out = self.dedup.filter(payload([imu_frame(0)]) + rest)
         self.assertEqual(out, SOCKET_HEADER + rest)
         self.assertEqual(self.dedup.pop_counters()["unsplit"], 1)

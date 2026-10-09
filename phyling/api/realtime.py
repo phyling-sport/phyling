@@ -153,9 +153,7 @@ class PhylingRealtime:
         """
         if not self.getDeviceStatus(number)["is_connected"]:
             self._updateDeviceSettings(number)
-        self.devicesStatus[number] = phyling_utils.deep_merge(
-            self.devicesStatus.get(number, {}), status
-        )
+        self.devicesStatus[number] = phyling_utils.deep_merge(self.devicesStatus.get(number, {}), status)
 
     """ --------------- Device RPC --------------- """
 
@@ -270,9 +268,7 @@ class PhylingRealtime:
             res = self.getRPCResponse(number, rpc_id)
             if res.status != 202:
                 return res
-        logging.warning(
-            f"executeRPCWait timed out after {max_wait}s waiting for RPC id {rpc_id}"
-        )
+        logging.warning(f"executeRPCWait timed out after {max_wait}s waiting for RPC id {rpc_id}")
         return res
 
     """ --------------- Device realtime indicator --------------- """

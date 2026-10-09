@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Stack
 
-- **Langage :** Python 3.10 + Cython
+- **Langage :** Python 3.10 à 3.15 + Cython (paquet pip rétro-compatible, `.python-version` = 3.10)
 - **Build :** setuptools avec extensions Cython (`pyproject.toml`)
 - **Dépendances :** numpy, bleak, ujson, urllib3, aiohttp, python-socketio
 - **Installation :** mode éditable `pip install -e .`
@@ -31,9 +31,9 @@ just --justfile ../infra/justfile docker-restart cloud-simu-dev latest "celery m
 
 ## Conventions
 
-- **Python 3.10**, 4 espaces, limite 120 caractères
-- **Linting :** Flake8
-- **Formatage :** Black
+- **Python ≥ 3.10** (aucune syntaxe ni API plus récente), 4 espaces, limite 120 caractères
+- **Linting :** ruff (`ruff check`)
+- **Formatage :** ruff (`ruff format`)
 - **Cython :** fichiers `.pyx` compilés en `.c` puis `.so`
 
 Voir `PhylingApp/CLAUDE.md` pour les conventions communes (imports, logs, docstrings).

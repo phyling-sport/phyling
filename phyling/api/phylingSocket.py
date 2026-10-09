@@ -1,12 +1,9 @@
 import logging
 from typing import Any
-from typing import Dict
-from typing import Optional
 
 import socketio
 
 from phyling.api.api import PhylingAPI
-
 
 sio = socketio.Client()
 sio_callbacks = {}  # {"event": callback, ...}
@@ -44,7 +41,7 @@ class PhylingSocket:
     """Manage socket.io connectivity and authentication workflows."""
 
     api: PhylingAPI = None
-    socket_rooms: Dict[str, int] = {}
+    socket_rooms: dict[str, int] = {}
 
     def __init__(
         self,
@@ -76,7 +73,7 @@ class PhylingSocket:
     def _on_message_error(self, event: str, data: str) -> None:
         logging.error(f"Socket message error: {data}")
 
-    def emit(self, event: str, data: Any, *, namespace: Optional[str] = None) -> None:
+    def emit(self, event: str, data: Any, *, namespace: str | None = None) -> None:
         sio.emit(event, data, namespace=namespace)
 
     def topicSubscribe(self, topic: str, event: str, callback: callable) -> None:

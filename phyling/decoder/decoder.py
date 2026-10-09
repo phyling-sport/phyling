@@ -1,9 +1,5 @@
 import logging
 import os
-from typing import Dict
-from typing import List
-from typing import Optional
-from typing import Union
 
 import numpy as np
 import pandas as pd
@@ -34,7 +30,7 @@ def decodeSave(filename, verbose=True, overwrite=False):
 
     try:
         jsonData = decode(filename, verbose, use_s3=False)
-        print("Write to {}...".format(fileout))
+        print(f"Write to {fileout}...")
         with open(fileout, "w") as f:
             f.write(ujson.dumps(jsonData))
         return True
@@ -68,12 +64,7 @@ def getTypeGraph(valType: str) -> str:
         * arrayAxB_<type>, arrayAxB => arrayAxB
         * else => exception
     """
-    if (
-        valType == "number"
-        or valType.startswith("uint")
-        or valType.startswith("int")
-        or valType.startswith("float")
-    ):
+    if valType == "number" or valType.startswith("uint") or valType.startswith("int") or valType.startswith("float"):
         return "number"
     if valType.startswith("array"):
         split = valType.split("_")
@@ -81,17 +72,13 @@ def getTypeGraph(valType: str) -> str:
             return split[0]  # arrayA or arrayAxB
         elif len(split) == 1:
             return valType  # arrayA or arrayAxB without type
-    raise Exception(
-        "Invalid type: {}, must be uintX, intX, floatX, arrayA_<type>, arrayAxB_<type>".format(
-            valType
-        )
-    )
+    raise Exception(f"Invalid type: {valType}, must be uintX, intX, floatX, arrayA_<type>, arrayAxB_<type>")
 
 
 def interp1d_(
     df: pd.DataFrame,
-    cols: List[str],
-    t_int: Optional[np.ndarray] = None,
+    cols: list[str],
+    t_int: np.ndarray | None = None,
     fs: float = 1,
     keep_type: bool = True,
     kind: str = "linear",
@@ -121,7 +108,8 @@ def interp1d_(
     t = df[x].values
     if t_int is None:
         # Take one less sample to prevent bugs from float representation
-        nb_samples = int((t[-1] - t[0]) * fs) - 1
+        # float(): under NumPy 2 (NEP 50) a float32 T times a Python float stays float32 and skews the count
+        nb_samples = int(float(t[-1] - t[0]) * fs) - 1
         t_int = np.linspace(0, nb_samples / fs, nb_samples + 1) + t[0]
 
     f_int = interp1d(t, df[cols], kind=kind, axis=0, bounds_error=False)
@@ -145,8 +133,8 @@ def interp1d_(
 def fuse_data(
     df1: pd.DataFrame,
     df2: pd.DataFrame,
-    cols1: Union[str, List[str]] = "all",
-    cols2: Union[str, List[str]] = "all",
+    cols1: str | list[str] = "all",
+    cols2: str | list[str] = "all",
     prefix1: str = "",
     prefix2: str = "",
     fs: float = 1.0,
@@ -214,9 +202,7 @@ def fuse_data(
     elif type_ == "union":
         if max(t1.min(), t2.min()) > min(t1.max(), t2.max()):
             # Concatenate df1 and df2 without interpolation
-            logging.info(
-                "Time ranges do not overlap. Concatenation without interpolation."
-            )
+            logging.info("Time ranges do not overlap. Concatenation without interpolation.")
             return pd.concat([df1, df2], ignore_index=True)
 
         t_min = min(t1.min(), t2.min())
@@ -226,7 +212,7 @@ def fuse_data(
 
     # Interpolate df1 / df2
     if interp_df1:
-        T = t_max - t_min
+        T = float(t_max - t_min)
         nb_samples = int(T * fs) - 1
         t_int = np.linspace(0, nb_samples / fs, nb_samples + 1) + t_min
         interp1 = interp1d_(df1, cols1, t_int, keep_type=True, x=x)
@@ -246,7 +232,7 @@ def fuse(
     modules: list,
     output_fs: float,
     prefix: bool = False,
-    t0: Optional[dict] = None,
+    t0: dict | None = None,
     x: str = "T",
     interp_df1=True,
 ) -> pd.DataFrame:
@@ -315,7 +301,7 @@ def get_module_rate(data: dict, module: str) -> float:
     return fs
 
 
-def get_rate(data: dict, modules: Union[str, List[str]]) -> Dict[str, float]:
+def get_rate(data: dict, modules: str | list[str]) -> dict[str, float]:
     """Gets the sampling rates of the input modules.
 
     Parameters:
@@ -372,7 +358,8 @@ def rename_cols(col: str, module: str, sep: str = ".") -> str:
 
 def datamodule2df(data: dict, module: str) -> pd.DataFrame:
     """Convert data object from Maxi-Phyling for one module to dataframe.
-    Note that the default output data type is "float32" !
+    Note that the default output data type is "float32" (int64 for gpstimeUs, float64 for latitude, longitude and
+    gpstime) !
 
     Parameters:
         data (dict): input data from Maxi-Phyling
@@ -398,15 +385,14 @@ def datamodule2df(data: dict, module: str) -> pd.DataFrame:
                 continue
             if field == "gpstimeUs":
                 dtype = "int64"
-            elif field in ("longitude", "latitude"):
+            elif field in ("longitude", "latitude", "gpstime"):
+                # gpstime is an epoch in seconds: float32 only resolves 128 s around 1.7e9
                 dtype = "float64"
             df[field] = np.array(arr, dtype=dtype)
     return df
 
 
-def data2df(
-    data: dict, modules: Union[str, List[str]] = "all"
-) -> Dict[str, pd.DataFrame]:
+def data2df(data: dict, modules: str | list[str] = "all") -> dict[str, pd.DataFrame]:
     """Convert data object from Maxi-Phyling to dataframe(s).
 
     Parameters:
@@ -427,7 +413,7 @@ def data2df(
     return res
 
 
-def json2csv(data: dict, output_fs: Optional[float] = None) -> pd.DataFrame:
+def json2csv(data: dict, output_fs: float | None = None) -> pd.DataFrame:
     """Process record data.
 
     Parameters:
@@ -457,9 +443,7 @@ def json2csv(data: dict, output_fs: Optional[float] = None) -> pd.DataFrame:
     if "description" in data and "startingTimeUs" in data["description"]:
         t0_us = data["description"]["startingTimeUs"]
         result["time"] = (
-            pd.to_datetime(
-                (t0_us + result["T"] * 1e6).astype("int64"), unit="us", utc=True
-            )
+            pd.to_datetime((t0_us + result["T"] * 1e6).astype("int64"), unit="us", utc=True)
             .dt.strftime("%Y-%m-%dT%H:%M:%S.%f")
             .str[:-3]
             + "Z"

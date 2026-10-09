@@ -35,9 +35,7 @@ def imu_frame(i: int) -> bytes:
 
 def gps_frame(i: int) -> bytes:
     """Return the i-th GPS frame of a 10 Hz stream, offset by 5 ms from the IMU."""
-    return struct.pack(
-        "<Bq6i", GPS_ID, EPOCH_US + i * 100_000 + 5_000, i, 0, 0, 0, 0, 0
-    )
+    return struct.pack("<Bq6i", GPS_ID, EPOCH_US + i * 100_000 + 5_000, i, 0, 0, 0, 0, 0)
 
 
 def payload(frames: list, run_id: int = 7) -> bytes:

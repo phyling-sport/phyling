@@ -31,9 +31,7 @@ def build_frame_sizes(header: dict) -> dict:
         dict: frame size in bytes per module id
     """
     sizes = {mod["id"]: mod["size"] for mod in header["modules"].values()}
-    if version.parse(header["description"].get("version", "v6.0.0")) >= version.parse(
-        "v6.6.0"
-    ):
+    if version.parse(header["description"].get("version", "v6.0.0")) >= version.parse("v6.6.0"):
         sizes[TIME_MODULE_ID] = TIME_MODULE_SIZE
     return sizes
 
@@ -58,11 +56,7 @@ def build_window_us(header: dict, ring_bytes: int) -> int:
     Returns:
         int: window in µs
     """
-    throughput = sum(
-        _module_rate(mod) * mod["size"]
-        for mod in header["modules"].values()
-        if _module_rate(mod) > 0
-    )
+    throughput = sum(_module_rate(mod) * mod["size"] for mod in header["modules"].values() if _module_rate(mod) > 0)
     if throughput <= 0:
         return 0
     return int(WINDOW_MARGIN * ring_bytes / throughput * 1e6)

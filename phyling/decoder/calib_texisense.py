@@ -4,9 +4,7 @@ import struct
 
 import numpy as np
 
-CHUNK_SIZE = (
-    1026  # one pressure step: 2 bytes of pressure + one response byte per sensor
-)
+CHUNK_SIZE = 1026  # one pressure step: 2 bytes of pressure + one response byte per sensor
 NUM_SENSORS = 1024
 MAT_SIZE = 32
 RAW_LEVELS = 256  # a sensor response is one byte
@@ -23,9 +21,7 @@ TEXICARE_PRO_GEOMETRY = {
         [15.0, *[30.0] * 4, 24.0, *[18.0] * 8, 29.25, 40.5, 35.5, 24.25, *[18.0] * 6]
         + [20.0, *[22.0] * 4, 22.5, 23.0, 11.5]
     ),
-    "row_heights_mm": np.array(
-        [13.5, 27.0, 26.5, 24.5, *[23.0] * 8, 20.0, *[17.0] * 18, 8.5]
-    ),
+    "row_heights_mm": np.array([13.5, 27.0, 26.5, 24.5, *[23.0] * 8, 20.0, *[17.0] * 18, 8.5]),
 }
 
 # Cache global pour stocker les LUTs pré-calculées
@@ -33,9 +29,7 @@ TEXICARE_PRO_GEOMETRY = {
 saved_luts: dict[str, np.ndarray] = {}
 
 
-def get_calibration_fingerprint(
-    calibration_raw_bytes, weight_asc=1.0, weight_desc=1.0, threshold_pa=0.0
-):
+def get_calibration_fingerprint(calibration_raw_bytes, weight_asc=1.0, weight_desc=1.0, threshold_pa=0.0):
     """Build the cache key of a lookup table.
 
     The phase weights and the pressure threshold shape the table itself, so two mats sharing a
@@ -100,21 +94,12 @@ def generate_texisense_calibration_data(buffer):
         tuple: (pressures, raws) with pressures of shape (n,) in Pascal and raws of shape (n, 1024)
     """
     if len(buffer) < CHUNK_SIZE or len(buffer) % CHUNK_SIZE != 0:
-        raise ValueError(
-            f"Calibration buffer of {len(buffer)} bytes is not a multiple of {CHUNK_SIZE}"
-        )
+        raise ValueError(f"Calibration buffer of {len(buffer)} bytes is not a multiple of {CHUNK_SIZE}")
 
     num_steps = len(buffer) // CHUNK_SIZE
-    words = [
-        struct.unpack_from("<H", buffer, i * CHUNK_SIZE)[0] for i in range(num_steps)
-    ]
+    words = [struct.unpack_from("<H", buffer, i * CHUNK_SIZE)[0] for i in range(num_steps)]
     pressures = np.array(words, dtype=np.float64) * TEXISENSE_PRESSURE_UNIT_PA
-    raws = np.array(
-        [
-            np.frombuffer(buffer, np.uint8, NUM_SENSORS, i * CHUNK_SIZE + 2)
-            for i in range(num_steps)
-        ]
-    )
+    raws = np.array([np.frombuffer(buffer, np.uint8, NUM_SENSORS, i * CHUNK_SIZE + 2) for i in range(num_steps)])
     return pressures, raws
 
 
@@ -281,15 +266,11 @@ def apply_texisense_calibration(raw_matrix, calibration_base64, metadata=None):
     metadata = metadata or {}
     weight_asc, weight_desc, threshold_pa = read_lut_metadata(metadata)
     calibration_raw = base64.b64decode(calibration_base64)
-    h = get_calibration_fingerprint(
-        calibration_raw, weight_asc, weight_desc, threshold_pa
-    )
+    h = get_calibration_fingerprint(calibration_raw, weight_asc, weight_desc, threshold_pa)
 
     if h not in saved_luts:
         pressures, raws = generate_texisense_calibration_data(calibration_raw)
-        saved_luts[h] = generate_lut(
-            pressures, raws, weight_asc, weight_desc, threshold_pa
-        )
+        saved_luts[h] = generate_lut(pressures, raws, weight_asc, weight_desc, threshold_pa)
 
     lut = saved_luts[h]
     flat_raw = np.array(raw_matrix, dtype=np.int32).flatten()
