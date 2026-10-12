@@ -1,6 +1,7 @@
 # Build the sdist and the binary wheels (cibuildwheel, config in pyproject.toml [tool.cibuildwheel]),
 # then upload everything to PyPI with trusted publishing when a tag is pushed.
 # Manual runs build the wheels only, or also upload them to TestPyPI (publish: testpypi).
+# Pull requests that touch the packaging build and test the wheels without uploading anything.
 
 name: Upload Python Package
 
@@ -8,6 +9,14 @@ on:
   push:
     tags:
       - '*'
+  pull_request:
+    paths:
+      - pyproject.toml
+      - setup.py
+      - MANIFEST.in
+      - "**/*.pyx"
+      - "**/*.pxd"
+      - .github/workflows/python-publish.yml
   workflow_dispatch:
     inputs:
       publish:
@@ -39,6 +48,10 @@ jobs:
         with:
           output-dir: wheelhouse
 
+      - name: Check wheel metadata
+        shell: bash
+        run: pipx run twine check --strict wheelhouse/*.whl
+
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -62,6 +75,9 @@ jobs:
         run: |
           python -m pip install build
           python -m build --sdist
+
+      - name: Check sdist metadata
+        run: pipx run twine check --strict dist/*.tar.gz
 
       - name: Upload sdist
         uses: actions/upload-artifact@v4
