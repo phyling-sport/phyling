@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Stack
 
-- **Langage :** Python 3.10 à 3.15 + Cython (paquet pip rétro-compatible, `.python-version` = 3.10)
+- **Langage :** Python 3.10 à 3.15 + Cython (paquet pip rétro-compatible, `.python-version` = 3.14, comme les autres dépôts)
 - **Build :** setuptools avec extensions Cython (`pyproject.toml`)
 - **Dépendances :** numpy, bleak, ujson, urllib3, aiohttp, python-socketio
 - **Installation :** mode éditable `pip install -e .`
