@@ -3,7 +3,6 @@ import struct
 import time
 from abc import ABC
 from abc import abstractmethod
-from typing import Union
 
 import pandas as pd
 from bleak import BleakClient
@@ -38,9 +37,7 @@ MAG_FACTOR = (
     1.0 / 1711
     if MAG_RANGE == 16
     else (
-        1.0 / 2281
-        if MAG_RANGE == 12
-        else (1.0 / 3421 if MAG_RANGE == 8 else (1.0 / 6842 if MAG_RANGE == 4 else 1.0))
+        1.0 / 2281 if MAG_RANGE == 12 else (1.0 / 3421 if MAG_RANGE == 8 else (1.0 / 6842 if MAG_RANGE == 4 else 1.0))
     )
 )
 TEMP_FACTOR = 1.0 / 100
@@ -66,7 +63,7 @@ TYPE_MAP = {
 }
 
 
-def find_device(name: str) -> Union[str, None]:
+def find_device(name: str) -> str | None:
     """
     Scan BLE devices and return the address of the one matching name.
 
@@ -114,12 +111,11 @@ def _make_col_spec(name: str, type_char: str = "B") -> dict:
 
 
 class BaseDevice(ABC):
-
     def __init__(
         self,
-        ble_name: Union[str, None] = None,
-        address: Union[str, None] = None,
-        module_name: Union[str, None] = None,
+        ble_name: str | None = None,
+        address: str | None = None,
+        module_name: str | None = None,
     ):
         """
         Base class for BLE Phyling devices.
@@ -174,7 +170,7 @@ class BaseDevice(ABC):
         """
         self._module_name = module_name
 
-    def get_df(self) -> Union[DataFrame, None]:
+    def get_df(self) -> DataFrame | None:
         """Return the recorded DataFrame with calibration applied."""
         if self.df is None:
             return None
@@ -213,9 +209,7 @@ class BaseDevice(ABC):
     def _init_df_if_needed(self) -> None:
         """Initialize self.df if not already done. Called from _setup_config."""
         if self.df is None:
-            self.df = DataFrame(
-                columns=["timestamp_nano", "notifDiff", "conn_id"] + self.config["data"]
-            )
+            self.df = DataFrame(columns=["timestamp_nano", "notifDiff", "conn_id"] + self.config["data"])
 
     def _notification_handler(self, _sender, data: bytes) -> None:
         """
@@ -238,11 +232,7 @@ class BaseDevice(ABC):
         diffTimeNotif = pc_now - timestamp_nano_start + NOTIF_DIFF_OFFSET
 
         for packetIdx in range(nbPackets):
-            timestamp_nano = (
-                timestamp_nano_start
-                + (elemSpacing * packetIdx)
-                - (elemSpacing * (nbPackets - 1))
-            )
+            timestamp_nano = timestamp_nano_start + (elemSpacing * packetIdx) - (elemSpacing * (nbPackets - 1))
             line = [timestamp_nano, diffTimeNotif, self._conn_id]
 
             offset = current_index
@@ -252,9 +242,7 @@ class BaseDevice(ABC):
                     fmt = "<f" if spec["size"] == 4 else "<d"
                     raw_val = struct.unpack(fmt, raw)[0]
                 else:
-                    raw_val = int.from_bytes(
-                        raw, byteorder="little", signed=spec["signed"]
-                    )
+                    raw_val = int.from_bytes(raw, byteorder="little", signed=spec["signed"])
                 val = raw_val * spec["factor"]
                 line.append(val)
                 offset += spec["size"]
@@ -263,7 +251,7 @@ class BaseDevice(ABC):
             self.nbDatas += 1
             current_index += self._oneDataSize
 
-    async def _run_ble_client(self, duration: Union[int, None]) -> None:
+    async def _run_ble_client(self, duration: int | None) -> None:
         """
         Run the BLE client to connect to the device and start recording data.
         Automatically reconnects on unexpected disconnection.
@@ -292,18 +280,14 @@ class BaseDevice(ABC):
             try:
                 async with BleakClient(
                     self.address,
-                    disconnected_callback=lambda __: setattr(
-                        self, "_ble_disconnected", True
-                    ),
+                    disconnected_callback=lambda __: setattr(self, "_ble_disconnected", True),
                 ) as client:
                     print(f"[{self.get_name()}] Device {self.ble_name} Connected")
 
                     await self._setup_config(client)
 
                     # Detect which data characteristic the device supports
-                    all_char_uuids = [
-                        str(c.uuid) for s in client.services for c in s.characteristics
-                    ]
+                    all_char_uuids = [str(c.uuid) for s in client.services for c in s.characteristics]
                     if BLE_UUID_PHYLING in all_char_uuids:
                         active_uuid = BLE_UUID_PHYLING
                     else:
@@ -318,19 +302,14 @@ class BaseDevice(ABC):
                     print(f"[{self.get_name()}] Recording started")
 
                     while not self.disconnect and not self._ble_disconnected:
-                        if (
-                            duration is not None
-                            and time.time() - start_time >= duration
-                        ):
+                        if duration is not None and time.time() - start_time >= duration:
                             self.disconnect = True
                             break
                         await asyncio.sleep(0.1)
 
                     if not self._ble_disconnected:
                         try:
-                            await client.write_gatt_char(
-                                active_uuid, BLE_NOTIF_STOP_REC
-                            )
+                            await client.write_gatt_char(active_uuid, BLE_NOTIF_STOP_REC)
                             await client.stop_notify(active_uuid)
                         except Exception:
                             pass
@@ -338,9 +317,7 @@ class BaseDevice(ABC):
                 print(f"[{self.get_name()}] Recording stopped ({self.nbDatas} samples)")
 
                 if self._ble_disconnected and not self.disconnect:
-                    print(
-                        f"[{self.get_name()}] Unexpected disconnect. Reconnecting in 1s..."
-                    )
+                    print(f"[{self.get_name()}] Unexpected disconnect. Reconnecting in 1s...")
                     self._conn_id += 1
                     await asyncio.sleep(1.0)
 
@@ -349,13 +326,11 @@ class BaseDevice(ABC):
             except Exception as e:
                 if self.disconnect:
                     break
-                print(
-                    f"[{self.get_name()}] Connection error: {e}. Reconnecting in 1s..."
-                )
+                print(f"[{self.get_name()}] Connection error: {e}. Reconnecting in 1s...")
                 self._conn_id += 1
                 await asyncio.sleep(1.0)
 
-    def run(self, duration: Union[int, None] = None) -> None:
+    def run(self, duration: int | None = None) -> None:
         """
         Connect to the device and start recording data.
 
@@ -365,9 +340,7 @@ class BaseDevice(ABC):
         if not self.address:
             self.address = find_device(name=self.ble_name)
         if not self.address:
-            print(
-                f"[{self.get_name()}] Device not found. Make sure it is turned on and within range."
-            )
+            print(f"[{self.get_name()}] Device not found. Make sure it is turned on and within range.")
             return
         try:
             asyncio.run(self._run_ble_client(duration))
@@ -436,13 +409,9 @@ class BaseDevice(ABC):
         # 2. Per-connection time correction (one offset per conn_id session)
         for conn_id, group in self.df.groupby("conn_id"):
             mask = self.df["conn_id"] == conn_id
-            duration = (
-                group["timestamp_nano"].iloc[-1] - group["timestamp_nano"].iloc[0]
-            )
+            duration = group["timestamp_nano"].iloc[-1] - group["timestamp_nano"].iloc[0]
             if duration > MIN_CONN_TIME_SEC:
-                offset = (
-                    group["notifDiff"].min() - NOTIF_DIFF_OFFSET - 0.003
-                )  # remove 3ms
+                offset = group["notifDiff"].min() - NOTIF_DIFF_OFFSET - 0.003  # remove 3ms
             else:
                 offset = 0.0
             self.df.loc[mask, "timestamp_nano"] += offset
@@ -453,11 +422,7 @@ class BaseDevice(ABC):
 
         # 4. Add ISO 8601 'time' column
         abs_ts = pd.to_datetime(self.df["timestamp_nano"], unit="s", utc=True)
-        self.df["time"] = (
-            abs_ts.dt.strftime("%Y-%m-%dT%H:%M:%S.")
-            + abs_ts.dt.strftime("%f").str[:3]
-            + "Z"
-        )
+        self.df["time"] = abs_ts.dt.strftime("%Y-%m-%dT%H:%M:%S.") + abs_ts.dt.strftime("%f").str[:3] + "Z"
 
         # 5. Remove raw timestamp columns, reorder
         data_cols = self.config["data"]

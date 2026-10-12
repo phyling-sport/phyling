@@ -2,7 +2,6 @@ import logging
 import os
 import platform
 import time
-from typing import Union
 
 import ujson
 import urllib3
@@ -52,8 +51,7 @@ class PhylingAPI:
         :return: A string representation of the PhylingAPI instance.
         """
         return (
-            f"PhylingAPI(baseurl={self.baseurl}) -> "
-            f"Connected as {self.connected_user['mail']}"
+            f"PhylingAPI(baseurl={self.baseurl}) -> Connected as {self.connected_user['mail']}"
             if self.is_connected()
             else "Not connected"
         )
@@ -74,7 +72,7 @@ class PhylingAPI:
         silent=False,
         timeout=12,
         **kwargs,
-    ) -> Union[urllib3.HTTPResponse, None]:
+    ) -> urllib3.HTTPResponse | None:
         """Make a http request on API
 
         Args:
@@ -137,9 +135,7 @@ class PhylingAPI:
                     logging.info(msg)
         except urllib3.exceptions.MaxRetryError:
             if not silent:
-                logging.error(
-                    f"Unable to connect to server (not found): {method} {url}"
-                )
+                logging.error(f"Unable to connect to server (not found): {method} {url}")
             if platform.system().lower() == "darwin":
                 logging.info("Reinstall SSL certificate")
                 os.system("/Applications/Python\\ 3.10/Install\\ Certificates.command")
@@ -162,7 +158,7 @@ class PhylingAPI:
         silent=False,
         timeout=12,
         **kwargs,
-    ) -> Union[urllib3.HTTPResponse, None]:
+    ) -> urllib3.HTTPResponse | None:
         """Make a GET request on API
 
         Args:
@@ -194,7 +190,7 @@ class PhylingAPI:
         silent=False,
         timeout=12,
         **kwargs,
-    ) -> Union[urllib3.HTTPResponse, None]:
+    ) -> urllib3.HTTPResponse | None:
         """Make a POST request on API
 
         Args:
@@ -226,7 +222,7 @@ class PhylingAPI:
         silent=False,
         timeout=12,
         **kwargs,
-    ) -> Union[urllib3.HTTPResponse, None]:
+    ) -> urllib3.HTTPResponse | None:
         """Make a PUT request on API
 
         Args:
@@ -258,7 +254,7 @@ class PhylingAPI:
         silent=False,
         timeout=12,
         **kwargs,
-    ) -> Union[urllib3.HTTPResponse, None]:
+    ) -> urllib3.HTTPResponse | None:
         """Make a DELETE request on API
 
         Args:
@@ -284,15 +280,15 @@ class PhylingAPI:
 
     def get_users(
         self,
-        client_id: Union[int, None] = None,
+        client_id: int | None = None,
         group_ids: list = [],
-        role: Union[str, None] = None,
+        role: str | None = None,
         active: bool = True,
         search: str = "",
         pageId: int = 1,
         pageSize: int = 0,
         soft: bool = False,
-    ) -> Union[dict, None]:
+    ) -> dict | None:
         """Get the users from the API
 
         Args:
@@ -332,9 +328,7 @@ class PhylingAPI:
             return None
         response_data = ujson.loads(res.data)
         res = {
-            "items": [
-                User(api=self, desc=rec) for rec in response_data.get("items", [])
-            ],
+            "items": [User(api=self, desc=rec) for rec in response_data.get("items", [])],
             "total": response_data.get("total", 0),
         }
         return res
@@ -355,7 +349,7 @@ class PhylingAPI:
         scenarioIds: list = [],
         minDate: str = "",
         maxDate: str = "",
-    ) -> Union[dict, None]:
+    ) -> dict | None:
         """Get the records from the API
 
         Args:
@@ -407,9 +401,7 @@ class PhylingAPI:
             return None
         response_data = ujson.loads(res.data)
         res = {
-            "records": [
-                Record(api=self, desc=rec) for rec in response_data.get("records", [])
-            ],
+            "records": [Record(api=self, desc=rec) for rec in response_data.get("records", [])],
             "total": response_data.get("total", 0),
         }
         return res
@@ -665,7 +657,7 @@ class PhylingAPI:
         name: str,
         wait_for_finish: bool = True,
         task_args: dict = {},
-        download_path: Union[str, None] = None,
+        download_path: str | None = None,
         overwrite: bool = False,
         timeout: int = 180,
         check_interval: int = 3,
@@ -684,11 +676,7 @@ class PhylingAPI:
             check_interval (int): The interval between checks for the task status. Default is 3 seconds.
             **kwargs: Additional arguments for the request.
         """
-        if (
-            download_path is not None
-            and os.path.exists(download_path)
-            and not overwrite
-        ):
+        if download_path is not None and os.path.exists(download_path) and not overwrite:
             logging.error("File already exists and overwrite is set to False")
             return False
 
@@ -778,7 +766,7 @@ class PhylingAPI:
     def wait_for_task(
         self,
         task_id: int,
-        download_path: Union[str, None] = None,
+        download_path: str | None = None,
         overwrite: bool = False,
         timeout: int = 300,
         check_interval: int = 3,
@@ -812,9 +800,7 @@ class PhylingAPI:
                         if overwrite:
                             os.remove(download_path)
                         else:
-                            logging.error(
-                                f"File already exists and overwrite is set to False: {download_path}"
-                            )
+                            logging.error(f"File already exists and overwrite is set to False: {download_path}")
                             return False
 
                     if res.status == 204:
@@ -827,9 +813,7 @@ class PhylingAPI:
                             timeout=2,
                         )
                         if res is None or res.status != 200:
-                            logging.error(
-                                f"Cannot download result from S3: {download_url}"
-                            )
+                            logging.error(f"Cannot download result from S3: {download_url}")
                             return False
                         # save the file
                         with open(download_path, "wb") as f:

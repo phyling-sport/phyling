@@ -46,11 +46,7 @@ def build_buffer(num_steps=NUM_STEPS, max_units=MAX_UNITS, saturate=False):
         ratio = unit / max_units
         hysteresis = 1.0 if step < num_steps else 1.08
         full_scale = 340 if saturate else 170
-        responses = (
-            np.round(full_scale * gains * hysteresis * np.sqrt(ratio))
-            .clip(0, 255)
-            .astype(np.uint8)
-        )
+        responses = np.round(full_scale * gains * hysteresis * np.sqrt(ratio)).clip(0, 255).astype(np.uint8)
         buffer += struct.pack("<H", unit) + responses.tobytes()
     return buffer, [u * TEXISENSE_PRESSURE_UNIT_PA for u in units]
 
@@ -108,9 +104,7 @@ class CalibTexisenseTest(unittest.TestCase):
         lut = generate_lut(pressures, raws)
         step = len(self.pressures) // 3
         recovered = lut[np.arange(NUM_SENSORS), raws[step]]
-        self.assertLess(
-            np.median(np.abs(recovered - pressures[step])), 0.1 * MAX_PRESSURE
-        )
+        self.assertLess(np.median(np.abs(recovered - pressures[step])), 0.1 * MAX_PRESSURE)
 
     def test_apply_reorders_then_smooths_the_matrix(self):
         """The lookup is per sensor; the map is then mirrored into Texisense order and smoothed."""
@@ -207,9 +201,7 @@ class CalibTexisenseMetadataTest(unittest.TestCase):
     def _legacy_output(self):
         """The output of the calibration as it behaves without metadata."""
         lut = generate_lut(self.pressures, self.raws)
-        return smooth_pressure_map(
-            lut[np.arange(NUM_SENSORS), self.raws[self.step]].reshape(32, 32)[::-1]
-        )
+        return smooth_pressure_map(lut[np.arange(NUM_SENSORS), self.raws[self.step]].reshape(32, 32)[::-1])
 
     def test_missing_metadata_keeps_legacy_output(self):
         """Every stored record and every mat not read since the firmware reports metadata has none."""
@@ -219,27 +211,21 @@ class CalibTexisenseMetadataTest(unittest.TestCase):
             {},
             {"serial": "N0000HG", "calib_date": "2026-03-14T09:21:05"},
         ):
-            out = apply_texisense_calibration(
-                self.raw_matrix, self.b64, metadata=metadata
-            )
+            out = apply_texisense_calibration(self.raw_matrix, self.b64, metadata=metadata)
             np.testing.assert_array_equal(out, expected)
 
     def test_any_single_key_may_be_missing(self):
         """No key is mandatory: dropping one must never raise nor produce a broken matrix."""
         for dropped in FULL_METADATA:
             metadata = {k: v for k, v in FULL_METADATA.items() if k != dropped}
-            out = apply_texisense_calibration(
-                self.raw_matrix, self.b64, metadata=metadata
-            )
+            out = apply_texisense_calibration(self.raw_matrix, self.b64, metadata=metadata)
             self.assertEqual(out.shape, (32, 32), msg=f"dropping {dropped}")
             self.assertTrue(np.all(np.isfinite(out)), msg=f"dropping {dropped}")
 
     def test_missing_weight_falls_back_to_one(self):
         metadata = {k: v for k, v in FULL_METADATA.items() if k != "weight_asc"}
         out = apply_texisense_calibration(self.raw_matrix, self.b64, metadata=metadata)
-        expected = apply_texisense_calibration(
-            self.raw_matrix, self.b64, metadata=FULL_METADATA
-        )
+        expected = apply_texisense_calibration(self.raw_matrix, self.b64, metadata=FULL_METADATA)
         np.testing.assert_array_equal(out, expected)
 
     def test_weights_move_the_curve_between_the_two_phases(self):
@@ -251,23 +237,15 @@ class CalibTexisenseMetadataTest(unittest.TestCase):
         top = int(np.argmax(self.pressures))
         in_range = (
             np.arange(RAW_LEVELS)[None, :]
-            <= np.minimum(
-                self.raws[: top + 1].max(axis=0), self.raws[top:].max(axis=0)
-            )[:, None]
+            <= np.minimum(self.raws[: top + 1].max(axis=0), self.raws[top:].max(axis=0))[:, None]
         )
         self.assertGreater(np.abs(asc_only - desc_only).max(), 0.01 * MAX_PRESSURE)
-        np.testing.assert_allclose(
-            even[in_range], ((asc_only + desc_only) / 2)[in_range], rtol=1e-5
-        )
-        np.testing.assert_allclose(
-            weighted[in_range], ((3 * asc_only + desc_only) / 4)[in_range], rtol=1e-5
-        )
+        np.testing.assert_allclose(even[in_range], ((asc_only + desc_only) / 2)[in_range], rtol=1e-5)
+        np.testing.assert_allclose(weighted[in_range], ((3 * asc_only + desc_only) / 4)[in_range], rtol=1e-5)
 
     def test_both_weights_zero_falls_back_to_an_even_average(self):
         """Honouring a 0/0 weighting would divide by zero; the even average is the sane fallback."""
-        self.assertEqual(
-            read_lut_metadata({"weight_asc": 0, "weight_desc": 0}), (1.0, 1.0, 0.0)
-        )
+        self.assertEqual(read_lut_metadata({"weight_asc": 0, "weight_desc": 0}), (1.0, 1.0, 0.0))
 
     def test_threshold_zeroes_below_and_keeps_above(self):
         threshold = 5000
@@ -293,14 +271,10 @@ class CalibTexisenseMetadataTest(unittest.TestCase):
         self.assertLess(lut[sensor, low], threshold)
         raw_matrix = np.full((32, 32), low)
         raw_matrix[10, 12] = high
-        out = apply_texisense_calibration(
-            raw_matrix, self.b64, metadata={"threshold_pa": threshold}
-        )
+        out = apply_texisense_calibration(raw_matrix, self.b64, metadata={"threshold_pa": threshold})
         floored = generate_lut(self.pressures, self.raws, threshold_pa=threshold)
         mapped = floored[np.arange(NUM_SENSORS), raw_matrix.flatten()]
-        np.testing.assert_allclose(
-            out, smooth_pressure_map(mapped.reshape(32, 32)[::-1]), rtol=1e-5
-        )
+        np.testing.assert_allclose(out, smooth_pressure_map(mapped.reshape(32, 32)[::-1]), rtol=1e-5)
         # the loaded sensor 10 * 32 + 12 lands on Texisense cell (21, 12)
         self.assertAlmostEqual(out[21, 12], 3 * floored[sensor, high] / 11, delta=0.1)
         self.assertAlmostEqual(out[20, 12], floored[sensor, high] / 11, delta=0.1)
@@ -322,18 +296,12 @@ class CalibTexisenseMetadataTest(unittest.TestCase):
             {"mirror_rows": True},
             {"mirror_cols": True},
         ):
-            out = apply_texisense_calibration(
-                self.raw_matrix, self.b64, metadata=dict(FULL_METADATA, **flags)
-            )
+            out = apply_texisense_calibration(self.raw_matrix, self.b64, metadata=dict(FULL_METADATA, **flags))
             np.testing.assert_array_equal(
                 out,
-                apply_texisense_calibration(
-                    self.raw_matrix, self.b64, metadata=FULL_METADATA
-                ),
+                apply_texisense_calibration(self.raw_matrix, self.b64, metadata=FULL_METADATA),
             )
-        np.testing.assert_array_equal(
-            apply_texisense_calibration(self.raw_matrix, self.b64), expected
-        )
+        np.testing.assert_array_equal(apply_texisense_calibration(self.raw_matrix, self.b64), expected)
 
     def test_cache_key_separates_different_metadata(self):
         """Two mats sharing a buffer but not their metadata must not share a lookup table."""
@@ -356,9 +324,7 @@ class CalibTexisenseMetadataTest(unittest.TestCase):
         """sensor_width/length are millimetres, not cell counts: a real mat reports 470 for a 32x32."""
         metadata = dict(FULL_METADATA, sensor_width=470, sensor_length=470)
         out = apply_texisense_calibration(self.raw_matrix, self.b64, metadata=metadata)
-        expected = apply_texisense_calibration(
-            self.raw_matrix, self.b64, metadata=FULL_METADATA
-        )
+        expected = apply_texisense_calibration(self.raw_matrix, self.b64, metadata=FULL_METADATA)
         self.assertEqual(out.shape, (32, 32))
         np.testing.assert_array_equal(out, expected)
 

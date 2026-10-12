@@ -1,6 +1,5 @@
 import asyncio
 import time
-from typing import Union
 
 import pandas as pd
 from bleak import BleakScanner
@@ -9,9 +8,7 @@ from phyling.decoder.decoder import fuse_data
 
 
 class PhylingDevices:
-    def __init__(
-        self, devices: list, output_fs: Union[float, None] = None, verbose: bool = False
-    ):
+    def __init__(self, devices: list, output_fs: float | None = None, verbose: bool = False):
         """
         Manage multiple BLE Phyling devices (NanoPhyling, MiniPhyling, etc.) simultaneously.
 
@@ -90,17 +87,13 @@ class PhylingDevices:
                           e.g. {"mini-42": ["adc_0", "mag_z"], "nano-07": ["gyro_z"]}
         """
         self._scan_all()
-        missing = [
-            d.ble_name
-            for d in self.devices
-            if d.get_name() in tare_dict and not d.address
-        ]
+        missing = [d.ble_name for d in self.devices if d.get_name() in tare_dict and not d.address]
         if missing:
             print(f"Cannot tare — devices not found: {missing}")
             return
         asyncio.run(self._tare_async(tare_dict))
 
-    def run(self, duration: Union[int, None] = None) -> None:
+    def run(self, duration: int | None = None) -> None:
         """
         Connect and record data from all devices simultaneously.
         After recording, time synchronization is applied to each device's DataFrame
@@ -117,9 +110,7 @@ class PhylingDevices:
         # Capture common reference time just before launching all devices
         t0 = time.time()
         try:
-            asyncio.run(
-                asyncio.gather(*(d._run_ble_client(duration) for d in self.devices))
-            )
+            asyncio.run(asyncio.gather(*(d._run_ble_client(duration) for d in self.devices)))
         except KeyboardInterrupt:
             print("Recording interrupted.")
         finally:
@@ -184,17 +175,13 @@ class PhylingDevices:
             fused = fused.dropna()
 
         # Recompute 'time' column from fused T using the first device's time as anchor
-        first_time = pd.to_datetime(
-            dfs[0]["time"].iloc[0], format="%Y-%m-%dT%H:%M:%S.%fZ", utc=True
-        )
+        first_time = pd.to_datetime(dfs[0]["time"].iloc[0], format="%Y-%m-%dT%H:%M:%S.%fZ", utc=True)
         t_offset = dfs[0]["T"].iloc[0]
         abs_times = first_time + pd.to_timedelta(fused["T"] - t_offset, unit="s")
         fused.insert(
             1,
             "time",
-            abs_times.dt.strftime("%Y-%m-%dT%H:%M:%S.")
-            + abs_times.dt.strftime("%f").str[:3]
-            + "Z",
+            abs_times.dt.strftime("%Y-%m-%dT%H:%M:%S.") + abs_times.dt.strftime("%f").str[:3] + "Z",
         )
 
         return fused.reset_index(drop=True)

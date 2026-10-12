@@ -4,7 +4,7 @@ default_install_hook_types:
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: check-yaml
         stages: [pre-commit]
@@ -16,24 +16,14 @@ repos:
       - id: trailing-whitespace
         stages: [pre-commit]
         exclude: ^tests/ ^assets/ *.txt
-  - repo: https://github.com/PyCQA/flake8
-    rev: 7.3.0
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.10
     hooks:
-      - id: flake8
+      - id: ruff-check
         stages: [pre-commit]
-  - repo: https://github.com/ambv/black
-    rev: 25.1.0
-    hooks:
-      - id: black
+        args: [--fix]
+      - id: ruff-format
         stages: [pre-commit]
-        language_version: python3
-        exclude: ^assets/
-  - repo: https://github.com/asottile/reorder_python_imports
-    rev: v3.15.0
-    hooks:
-      - id: reorder-python-imports
-        stages: [pre-commit]
-        args: [--py3-plus]
   - repo: local
     hooks:
       - id: pytest
@@ -45,12 +35,13 @@ repos:
         pass_filenames: false
         always_run: true
   - repo: https://github.com/kynan/nbstripout
-    rev: 0.6.1
+    rev: 0.9.1
     hooks:
       - id: nbstripout
+        args: [--keep-id]
         exclude: ^examples/NanoPhyling-MiniPhyling/lab_examples/.*\.ipynb$
   - repo: https://github.com/compilerla/conventional-pre-commit
-    rev: v4.2.0
+    rev: v4.4.0
     hooks:
       - id: conventional-pre-commit
         stages: [commit-msg]

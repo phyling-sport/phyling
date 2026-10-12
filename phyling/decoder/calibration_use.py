@@ -4,7 +4,6 @@ import numpy as np
 
 from phyling.decoder import calib_texisense
 
-
 CALIB_3D_MAPPER = {
     "acc": ["acc_x", "acc_y", "acc_z"],
     "gyro": ["gyro_x", "gyro_y", "gyro_z"],
@@ -45,6 +44,60 @@ def get_calib_3d_cols(group, cols):
         if len(adc_cols) == 3:
             return adc_cols
     return None
+
+
+CALIB_NUMERIC_KEYS = ("coef", "offset")
+
+
+def _normalize_calib_value(value, path):
+    """Convert a coef/offset value (scalar or nested lists) to numbers, raise ValueError if not numeric."""
+    if value is None or isinstance(value, (int, float, np.number)):
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_normalize_calib_value(item, path) for item in value]
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            pass
+    raise ValueError(f"Invalid calibration {path}: {value!r}")
+
+
+def normalize_calibration(calibration):
+    """Validate the numeric entries of a calibration and convert numeric strings to float.
+
+    Every `coef` / `offset` of a `{module: {field: {...}}}` entry (scalar, 3D list or matrix) must be a
+    number: a numeric string such as `"0.5"` is converted to float, anything else (empty string, text,
+    nested object) raises. Other keys (texisense base64, algo params, units...) are left untouched.
+
+    Parameters:
+        calibration (dict | None): calibration content, as read from the record header
+
+    Return:
+        dict | None: a normalized copy of the calibration (None if None was given)
+
+    Raises:
+        ValueError: on a non-numeric coef/offset, naming `module.field.key` and the value
+    """
+    if calibration is None:
+        return None
+    if not isinstance(calibration, dict):
+        raise ValueError(f"Invalid calibration: expected a JSON object, got {type(calibration).__name__}")
+
+    normalized = {}
+    for module, fields in calibration.items():
+        if not isinstance(fields, dict):
+            normalized[module] = fields
+            continue
+        normalized[module] = {}
+        for field, entry in fields.items():
+            if isinstance(entry, dict) and any(key in entry for key in CALIB_NUMERIC_KEYS):
+                entry = dict(entry)
+                for key in CALIB_NUMERIC_KEYS:
+                    if key in entry:
+                        entry[key] = _normalize_calib_value(entry[key], f"{module}.{field}.{key}")
+            normalized[module][field] = entry
+    return normalized
 
 
 def calibration_1D(data, coef=None, offset=None):
@@ -167,9 +220,7 @@ def calibration(data, module, calib):
             cols = get_calib_3d_cols(key, data)
             if cols is None:
                 if key == "adc":
-                    raise ValueError(
-                        f"Calibration3D: Cannot find 3 columns for adc calibration in data: {data.keys()}"
-                    )
+                    raise ValueError(f"Calibration3D: Cannot find 3 columns for adc calibration in data: {data.keys()}")
                 continue
             data = calibration_3D(data, cols, coef, offset)
         elif key in data and texisense_calibration(calib, module, key) is not None:
@@ -214,9 +265,7 @@ def r2_score(y_true, y_pred):
         return float("nan")
 
     numerator = ((y_true - y_pred) ** 2).sum(axis=0, dtype=np.float32)
-    denominator = ((y_true - np.average(y_true, axis=0)) ** 2).sum(
-        axis=0, dtype=np.float32
-    )
+    denominator = ((y_true - np.average(y_true, axis=0)) ** 2).sum(axis=0, dtype=np.float32)
     nonzero_denominator = denominator != 0
     nonzero_numerator = numerator != 0
     valid_score = nonzero_denominator & nonzero_numerator
@@ -306,9 +355,7 @@ def time_correction(bleTime, notifTime, fs):
     """
     t_ble = compute_time(bleTime, fs)
     m, c, r2 = solve_lin_reg(bleTime, notifTime, intercept=True)
-    logging.info(
-        f"Time correction v1 with linear regression t_corr = {m}t + {c} (R^2 = {r2})"
-    )
+    logging.info(f"Time correction v1 with linear regression t_corr = {m}t + {c} (R^2 = {r2})")
     if r2 < 0.999:
         logging.warning("Time regression is not good enough, no correction applied ...")
         return t_ble
@@ -336,11 +383,7 @@ def time_correction_v1(mod_data: dict):
     # Compute corrected time for each chunk
     T_corr = []
     for i in range(len(ind) - 1):
-        T_corr.extend(
-            time_correction(
-                bleTime[ind[i] : ind[i + 1]], notifTime[ind[i] : ind[i + 1]], fs
-            )
-        )
+        T_corr.extend(time_correction(bleTime[ind[i] : ind[i + 1]], notifTime[ind[i] : ind[i + 1]], fs))
     return np.array(T_corr) - 0.03
 
 
@@ -367,9 +410,7 @@ def time_correction_v2(mod_data: dict, mod: str):
             min_ = np.min(notifDiff[ind[i] : ind[i + 1]])
             max_ = np.max(notifDiff[ind[i] : ind[i + 1]])
             if min_ == 0 and max_ == 0:
-                logging.warning(
-                    f"{mod}: Cannot apply correction to old miniphyling data"
-                )
+                logging.warning(f"{mod}: Cannot apply correction to old miniphyling data")
             else:
                 appliedDiff = min_ / 1e6 - 0.003
                 # 0.003 is the mean time btw notif sent on mini and receive on maxi
@@ -422,7 +463,5 @@ def high_range_gyro(mod_data, mod_calib, record=None):
 
     gyro = np.array(mod_data["data"][col_gyro])
     acc = np.array(mod_data["data"][col_acc])
-    mod_data["data"][col_gyro], _, _ = process_high_range(
-        gyro, acc, fs, m, record=record
-    )
+    mod_data["data"][col_gyro], _, _ = process_high_range(gyro, acc, fs, m, record=record)
     return mod_data

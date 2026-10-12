@@ -1,38 +1,79 @@
 [build-system]
-requires = [
-    "setuptools>=61",
-    "setuptools-scm>=8",
-    "wheel",
-    "Cython",
-    "numpy>=1.24.4,<3",
-    "bleak",
-    "ujson",
-    "urllib3",
-    "aiohttp",
-    "python-socketio"
-]
+requires = ["setuptools>=70.1", "setuptools-scm>=8", "Cython>=3"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "phyling"
 description = "Phyling public package"
 readme = "README.md"
+requires-python = ">=3.10"
 license = { file = "LICENSE.txt" }
 urls = { Homepage = "https://github.com/phyling-sport/phyling" }
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
+    "Programming Language :: Cython",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+]
 dependencies = [
     "numpy>=1.24.4,<3",
-    "bleak",
-    "ujson",
-    "urllib3",
-    "aiohttp",
-    "python-socketio"
+    "pandas>=2.0,<4",
+    "scipy>=1.10,<2",
+    "packaging>=21",
+    "bleak>=0.22,<4",
+    "ujson>=5.5,<7",
+    "urllib3>=1.26,<3",
+    "python-socketio[client]>=5.1,<6",
 ]
 dynamic = ["version"]
 
-[tool.setuptools]
-packages = ["phyling"]
+[tool.setuptools.packages.find]
+include = ["phyling*"]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["*.c", "*.pyx"]
 
 [tool.setuptools_scm]
 version_scheme = "guess-next-dev"
 local_scheme = "no-local-version"
 fallback_version = "0.0.0"
+
+[tool.cibuildwheel]
+build = ["cp310-*", "cp311-*", "cp312-*", "cp313-*", "cp314-*", "cp315-*"]
+skip = ["*-musllinux_*"]
+test-sources = ["tests"]
+test-requires = ["pytest"]
+test-command = "python -m pytest -q tests"
+# bleak's winrt-* dependencies have no cp315 wheel yet and fail to build: the wheel is built, its test is skipped
+test-skip = ["cp315-win*"]
+
+[tool.cibuildwheel.linux]
+archs = ["native"]
+
+[tool.cibuildwheel.macos]
+archs = ["arm64"]
+
+[tool.cibuildwheel.windows]
+archs = ["AMD64"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = ["*.ipynb", "*.md", "assets/", "build/"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP"]
+ignore = ["E402", "W291"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["api", "phyling", "phylingAnalysis", "phylingUtils"]
+force-single-line = true
+order-by-type = false
