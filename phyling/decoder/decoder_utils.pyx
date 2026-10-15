@@ -972,7 +972,8 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
                 "data": {},
                 "data_info": {},
             }
-            cols = ["rate", "type", "name", "bleName"]  # cols to copy in description
+            # computeNorm / computeRms / sum: analysis options set in the Sensor settings, copied by the Maxi
+            cols = ["rate", "type", "name", "bleName", "computeNorm", "computeRms", "computeSum"]
             for col in cols:
                 if col in header["modules"][module_name]:
                     jsonData["modules"][module_name]["description"][col] = header["modules"][module_name][col]

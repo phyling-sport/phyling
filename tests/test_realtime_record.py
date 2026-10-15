@@ -126,6 +126,32 @@ class TestDataTxt(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, r"^Invalid calibration imu\.acc_x\.coef: ''$"):
                 decode(path, verbose=False, use_s3=False)
 
+    def test_decode_copies_sensor_options(self):
+        """The Sensor options written by the Maxi in a module description reach data["modules"][mod]["description"]."""
+        header = make_header()
+        header["modules"]["imu"].update({"type": "imu", "computeNorm": True, "computeRms": False, "computeSum": False})
+        header["modules"]["gps"]["type"] = "gps"
+        header["modules"]["imu"]["description"] = [
+            {"name": "id", "type": "uint8"},
+            {"name": "time", "type": "uint64"},
+            *[{"name": f"v{i}", "type": "int16"} for i in range(7)],
+        ]
+        header["modules"]["gps"]["description"] = [
+            {"name": "id", "type": "uint8"},
+            {"name": "time", "type": "uint64"},
+            *[{"name": f"v{i}", "type": "int32"} for i in range(6)],
+        ]
+        header["modules"]["debug"]["description"] = []
+        frames = b"".join(imu_frame(i) + gps_frame(i) for i in range(50))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "data.txt")
+            with open(path, "wb") as f:
+                f.write(build_data_txt(header, {}, frames))
+            data = decode(path, verbose=False, use_s3=False)
+        imu = data["modules"]["imu"]["description"]
+        self.assertEqual((imu["computeNorm"], imu["computeRms"], imu["computeSum"]), (True, False, False))
+        self.assertFalse({"computeNorm", "computeRms", "computeSum"} & set(data["modules"]["gps"]["description"]))
+
 
 if __name__ == "__main__":
     unittest.main()
