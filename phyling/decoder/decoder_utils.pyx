@@ -213,6 +213,9 @@ cpdef object applyFactor(object value, object curMod, object elem):
             return value * curMod["adc_factor"]
         elif "temp_factor" in curMod and elem["name"].startswith("temp"):  # temp or temperature
             return value * curMod["temp_factor"]
+    # Mini / Nano acc norm: uint16 raw LSB (up to sqrt(3) * 32768), same acc_factor as acc_x
+    elif elem["name"] == "acc_norm" and elem["type"] == "uint16" and "acc_factor" in curMod:
+        return value * curMod["acc_factor"]
     # elif curMod["type"] in ("adc", "analog") and elem["type"] == "uint16":
     #     if "factor" in curMod:
     #         return value * curMod["factor"]
@@ -969,7 +972,8 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
                 "data": {},
                 "data_info": {},
             }
-            cols = ["rate", "type", "name", "bleName"]  # cols to copy in description
+            # computeNorm / computeRms / sum: analysis options set in the Sensor settings, copied by the Maxi
+            cols = ["rate", "type", "name", "bleName", "computeNorm", "computeRms", "computeSum"]
             for col in cols:
                 if col in header["modules"][module_name]:
                     jsonData["modules"][module_name]["description"][col] = header["modules"][module_name][col]
