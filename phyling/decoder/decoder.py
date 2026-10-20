@@ -125,6 +125,9 @@ def interp1d_(
             if dtypes[col] in (np.int64, np.int32):
                 # Replace nan values by 0 for int columns
                 interp[col] = interp[col].fillna(0)
+            if dtypes[col].kind in "iu":
+                # astype truncates: a label 3 interpolated between two 3 would come back as 2.9999999 -> 2
+                interp[col] = np.rint(interp[col])
         interp = interp.astype(dtypes)
 
     return interp[out_cols]
