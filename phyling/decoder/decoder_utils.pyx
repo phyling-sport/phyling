@@ -23,6 +23,7 @@ LAST_VALID_T_DICT = "__last_valid_t__"
 LAST_EPOCH_US_DICT = "__last_epoch_us__"
 MAX_TIME_JUMP_SEC = 3600 * 24 * 2  # generous vs. legitimate module gaps, tiny vs. a corrupted (~millions of years) T
 MAX_FIRST_T_SEC = 3600 * 24 * 35  # bootstrap bound: above the ~30-day record objective, tiny vs. a corrupted T
+POWERMETER_BALANCE_FACTOR = 0.5  # the Maxi records the raw BLE balance byte (left pedal % x 2)
 
 # Units of the Mini GPS fields (mirrors firmware MiniGpsModule GPS_FIELD_UNITS), keyed by bare field name
 MINI_GPS_FIELD_UNITS = {
@@ -202,6 +203,10 @@ cpdef object getElem(char * content, int curPos, str valType, int content_size=0
 
 
 cpdef object applyFactor(object value, object curMod, object elem):
+    """Scale a raw decoded value to its physical unit according to its module and field description."""
+    # BLE Cycling Power balance byte: left pedal share in 0.5 % steps, 0 = not reported by the sensor
+    if curMod["type"] == "powermeter" and elem["name"] == "balance":
+        return float("nan") if value == 0 else value * POWERMETER_BALANCE_FACTOR
     if curMod["type"] in ("imu", "mag", "miniphyling", "nanophyling", "ble") and elem["type"] == "int16":
         if "acc_factor" in curMod and elem["name"].startswith("acc_"):
             return value * curMod["acc_factor"]
