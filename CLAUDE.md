@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `phyling` est le package core Python de la plateforme Phyling. Il contient le code Cython pour la communication BLE avec les devices et les algorithmes d'analyse de base.
 
-**Avant de toucher au comportement du décodeur (`decoder/decoder_utils.pyx`), lire [`docs/spec/analyse.md`](../../docs/spec/analyse.md)** — contrôle de saut par module, bornes mesurées. Décision associée : [ADR-0006](../../docs/adr/0006-v7.0.6-horloge-disciplinee-phyling-lte.md).
+**Avant de toucher au comportement du décodeur (`decoder/decoder_utils.pyx`), lire [`docs/spec/analyse.md`](../docs/spec/analyse.md)** — contrôle de saut par module, bornes mesurées. Décision associée : [ADR-0006](../docs/adr/0006-v7.0.6-horloge-disciplinee-phyling-lte.md).
 
 ## Stack
 
@@ -18,7 +18,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build
 
 ```bash
-cd PhylingApp/phyling
+cd phyling
 
 # Compiler les extensions Cython
 pip install -e .
@@ -36,4 +36,4 @@ just --justfile ../infra/justfile docker-restart cloud-simu-dev latest "celery m
 - **Formatage :** ruff (`ruff format`)
 - **Cython :** fichiers `.pyx` compilés en `.c` puis `.so`
 
-Voir `PhylingApp/CLAUDE.md` pour les conventions communes (imports, logs, docstrings).
+Voir le CLAUDE.md racine (PhylingApp) pour les conventions communes (imports, logs, docstrings).
