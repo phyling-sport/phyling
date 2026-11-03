@@ -188,7 +188,7 @@
     // =========================================================
 
     const state = {
-      apiBase: localStorage.getItem('apiBase') || 'https://api.staging.cl.phyling.fr',
+      apiBase: localStorage.getItem('apiBase') || 'https://api-app.staging.phyling.fr',
       socket: null,
       apiKey: localStorage.getItem('apiKey') || '',
       clientId: null,
@@ -1658,7 +1658,7 @@
     }
 
     $('#saveCfg').addEventListener('click', () => {
-      const api = $('#apiBase').value.trim() || 'https://api.staging.cl.phyling.fr';
+      const api = $('#apiBase').value.trim() || 'https://api-app.staging.phyling.fr';
       state.apiBase = api;
       localStorage.setItem('apiBase', api);
       $('#cfgState').textContent = 'Enregistré';
