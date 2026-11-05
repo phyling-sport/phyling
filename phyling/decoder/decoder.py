@@ -1,5 +1,8 @@
 import logging
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 import numpy as np
 import pandas as pd
@@ -230,6 +233,40 @@ def fuse_data(
     return df[cols_order]
 
 
+_native_frames: ContextVar[dict | None] = ContextVar("native_frames", default=None)
+
+
+@contextmanager
+def capture_native_frames() -> Iterator[dict[str, pd.DataFrame]]:
+    """Collect the frames given to fuse() inside the block, before interpolation, at their native rate.
+
+    Yields a dict {frame key in fuse() input: DataFrame}, filled by every fuse() call made in the block (the first
+    call wins for a given key). Column names and the time origin are those of the fused DataFrame.
+    """
+    frames: dict[str, pd.DataFrame] = {}
+    token = _native_frames.set(frames)
+    try:
+        yield frames
+    finally:
+        _native_frames.reset(token)
+
+
+def _capture_frames(res: dict, modules: list, prefix: bool, t0: dict | None, x: str):
+    """Store the input frames of a fuse() call in the active capture_native_frames() block, if any."""
+    captured = _native_frames.get()
+    if captured is None:
+        return
+    for module in modules:
+        if module in captured:
+            continue
+        frame = res[module]
+        if prefix:
+            frame = frame.rename(columns=lambda col: col if col == x else rename_cols(col, module))
+        if t0 is not None:
+            frame = frame.assign(**{x: frame[x] - t0[module]})
+        captured[module] = frame.copy()
+
+
 def fuse(
     res: dict,
     modules: list,
@@ -256,6 +293,7 @@ def fuse(
     mod2fuse = [module for module in modules if len(res[module]) > 1]
     if len(mod2fuse) == 0:
         raise ValueError("Sequence does not contain any data.")
+    _capture_frames(res, mod2fuse, prefix, t0, x)
 
     result = res[mod2fuse[0]]
     prefix1 = f"{mod2fuse[0]}." if prefix else ""
@@ -361,8 +399,8 @@ def rename_cols(col: str, module: str, sep: str = ".") -> str:
 
 def datamodule2df(data: dict, module: str) -> pd.DataFrame:
     """Convert data object from Maxi-Phyling for one module to dataframe.
-    Note that the default output data type is "float32" (int64 for gpstimeUs, float64 for latitude, longitude and
-    gpstime) !
+    Note that the default output data type is "float32" (float64 for T, latitude, longitude and gpstime, int64 for
+    gpstimeUs) !
 
     Parameters:
         data (dict): input data from Maxi-Phyling
@@ -374,7 +412,7 @@ def datamodule2df(data: dict, module: str) -> pd.DataFrame:
     df = pd.DataFrame()
     if module in data["modules"]:
         if "T" in data["modules"][module]:
-            df["T"] = np.array(data["modules"][module]["T"], dtype="float32")
+            df["T"] = np.array(data["modules"][module]["T"], dtype="float64")
         for field, arr in data["modules"][module]["data"].items():
             dtype = "float32"
             if len(arr) > 0 and isinstance(arr[0], (list, np.ndarray)):
@@ -388,8 +426,8 @@ def datamodule2df(data: dict, module: str) -> pd.DataFrame:
                 continue
             if field == "gpstimeUs":
                 dtype = "int64"
-            elif field in ("longitude", "latitude", "gpstime"):
-                # gpstime is an epoch in seconds: float32 only resolves 128 s around 1.7e9
+            elif field in ("T", "longitude", "latitude", "gpstime"):
+                # float32 only resolves 0.24 ms beyond T = 2048 s and 128 s for a gpstime epoch around 1.7e9
                 dtype = "float64"
             df[field] = np.array(arr, dtype=dtype)
     return df
@@ -435,7 +473,7 @@ def json2csv(data: dict, output_fs: float | None = None) -> pd.DataFrame:
 
     for mod in modules:
         # Compute sampling frequency for each module
-        df[mod]["fs"] = 1 / df[mod]["T"].diff()
+        df[mod]["fs"] = (1 / df[mod]["T"].diff()).astype("float32")
         # Rename columns before fusion
         df[mod] = df[mod].rename(lambda col: rename_cols(col, mod), axis="columns")
 
