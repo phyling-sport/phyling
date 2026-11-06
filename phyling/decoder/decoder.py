@@ -1,8 +1,5 @@
 import logging
 import os
-from collections.abc import Iterator
-from contextlib import contextmanager
-from contextvars import ContextVar
 
 import numpy as np
 import pandas as pd
@@ -233,38 +230,20 @@ def fuse_data(
     return df[cols_order]
 
 
-_native_frames: ContextVar[dict | None] = ContextVar("native_frames", default=None)
-
-
-@contextmanager
-def capture_native_frames() -> Iterator[dict[str, pd.DataFrame]]:
-    """Collect the frames given to fuse() inside the block, before interpolation, at their native rate.
-
-    Yields a dict {frame key in fuse() input: DataFrame}, filled by every fuse() call made in the block (the first
-    call wins for a given key). Column names and the time origin are those of the fused DataFrame.
-    """
-    frames: dict[str, pd.DataFrame] = {}
-    token = _native_frames.set(frames)
-    try:
-        yield frames
-    finally:
-        _native_frames.reset(token)
-
-
-def _capture_frames(res: dict, modules: list, prefix: bool, t0: dict | None, x: str):
-    """Store the input frames of a fuse() call in the active capture_native_frames() block, if any."""
-    captured = _native_frames.get()
-    if captured is None:
-        return
+def _capture_frames(native_frames: dict, res: dict, modules: list, prefix: bool, t0: dict | None, x: str):
+    """Store the input frames of a fuse() call in native_frames (see fuse()), the first call winning for a key."""
+    # fuse() returns a single module as is, without prefix
+    prefixed = prefix and len(modules) > 1
     for module in modules:
-        if module in captured:
+        if module in native_frames:
             continue
         frame = res[module]
-        if prefix:
-            frame = frame.rename(columns=lambda col: col if col == x else rename_cols(col, module))
+        frame = frame[[col for col in frame.columns if pd.api.types.is_numeric_dtype(frame[col])]]
+        if prefixed:
+            frame = frame.rename(columns=lambda col, mod=module: col if col in ("T", x) else rename_cols(col, mod))
         if t0 is not None:
             frame = frame.assign(**{x: frame[x] - t0[module]})
-        captured[module] = frame.copy()
+        native_frames[module] = frame
 
 
 def fuse(
@@ -275,6 +254,7 @@ def fuse(
     t0: dict | None = None,
     x: str = "T",
     interp_df1=True,
+    native_frames: dict | None = None,
 ) -> pd.DataFrame:
     """Performs fusion of DataFrames at a given sampling rate.
 
@@ -286,6 +266,10 @@ def fuse(
         t0: object with synchronisation times for each module.
         x (str): Time column name.
         interp_df1 (bool): whether to interpolate the first DataFrame (see fuse_data function).
+        native_frames: if given, filled with the input frames at their native rate, before interpolation, by input
+            key (a key already present is kept). Only numeric columns are kept, named as in the returned DataFrame,
+            time origin included; "T" always keeps its name. Frames are copy-on-write views of the inputs
+            (pandas >= 3): no data is copied unless the caller later modifies those inputs.
 
     Returns:
         Fused DataFrame.
@@ -293,7 +277,8 @@ def fuse(
     mod2fuse = [module for module in modules if len(res[module]) > 1]
     if len(mod2fuse) == 0:
         raise ValueError("Sequence does not contain any data.")
-    _capture_frames(res, mod2fuse, prefix, t0, x)
+    if native_frames is not None:
+        _capture_frames(native_frames, res, mod2fuse, prefix, t0, x)
 
     result = res[mod2fuse[0]]
     prefix1 = f"{mod2fuse[0]}." if prefix else ""
