@@ -81,7 +81,8 @@ class CaptureNativeFramesTest(unittest.TestCase):
         frame = captured["gps"]
         self.assertEqual(frame["fix"].dtype, np.int64)
         self.assertEqual(captured["imu"]["acc_x"].dtype, np.float32)
-        self.assertTrue(np.shares_memory(frame["speed"].to_numpy(), res["gps"]["speed"].to_numpy()))
+        if int(pd.__version__.split(".")[0]) >= 3:  # copy-on-write is the default from pandas 3 only
+            self.assertTrue(np.shares_memory(frame["speed"].to_numpy(), res["gps"]["speed"].to_numpy()))
         res["gps"].loc[0, "speed"] = 99.0
         self.assertNotEqual(frame["speed"].iloc[0], 99.0)
 
