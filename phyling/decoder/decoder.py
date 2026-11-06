@@ -230,6 +230,22 @@ def fuse_data(
     return df[cols_order]
 
 
+def _capture_frames(native_frames: dict, res: dict, modules: list, prefix: bool, t0: dict | None, x: str):
+    """Store the input frames of a fuse() call in native_frames (see fuse()), the first call winning for a key."""
+    # fuse() returns a single module as is, without prefix
+    prefixed = prefix and len(modules) > 1
+    for module in modules:
+        if module in native_frames:
+            continue
+        frame = res[module]
+        frame = frame[[col for col in frame.columns if pd.api.types.is_numeric_dtype(frame[col])]]
+        if prefixed:
+            frame = frame.rename(columns=lambda col, mod=module: col if col in ("T", x) else rename_cols(col, mod))
+        if t0 is not None:
+            frame = frame.assign(**{x: frame[x] - t0[module]})
+        native_frames[module] = frame
+
+
 def fuse(
     res: dict,
     modules: list,
@@ -238,6 +254,7 @@ def fuse(
     t0: dict | None = None,
     x: str = "T",
     interp_df1=True,
+    native_frames: dict | None = None,
 ) -> pd.DataFrame:
     """Performs fusion of DataFrames at a given sampling rate.
 
@@ -249,6 +266,10 @@ def fuse(
         t0: object with synchronisation times for each module.
         x (str): Time column name.
         interp_df1 (bool): whether to interpolate the first DataFrame (see fuse_data function).
+        native_frames: if given, filled with the input frames at their native rate, before interpolation, by input
+            key (a key already present is kept). Only numeric columns are kept, named as in the returned DataFrame,
+            time origin included; "T" always keeps its name. Frames are copy-on-write views of the inputs
+            (pandas >= 3): no data is copied unless the caller later modifies those inputs.
 
     Returns:
         Fused DataFrame.
@@ -256,6 +277,8 @@ def fuse(
     mod2fuse = [module for module in modules if len(res[module]) > 1]
     if len(mod2fuse) == 0:
         raise ValueError("Sequence does not contain any data.")
+    if native_frames is not None:
+        _capture_frames(native_frames, res, mod2fuse, prefix, t0, x)
 
     result = res[mod2fuse[0]]
     prefix1 = f"{mod2fuse[0]}." if prefix else ""
@@ -361,8 +384,8 @@ def rename_cols(col: str, module: str, sep: str = ".") -> str:
 
 def datamodule2df(data: dict, module: str) -> pd.DataFrame:
     """Convert data object from Maxi-Phyling for one module to dataframe.
-    Note that the default output data type is "float32" (int64 for gpstimeUs, float64 for latitude, longitude and
-    gpstime) !
+    Note that the default output data type is "float32" (float64 for T, latitude, longitude and gpstime, int64 for
+    gpstimeUs) !
 
     Parameters:
         data (dict): input data from Maxi-Phyling
@@ -374,7 +397,7 @@ def datamodule2df(data: dict, module: str) -> pd.DataFrame:
     df = pd.DataFrame()
     if module in data["modules"]:
         if "T" in data["modules"][module]:
-            df["T"] = np.array(data["modules"][module]["T"], dtype="float32")
+            df["T"] = np.array(data["modules"][module]["T"], dtype="float64")
         for field, arr in data["modules"][module]["data"].items():
             dtype = "float32"
             if len(arr) > 0 and isinstance(arr[0], (list, np.ndarray)):
@@ -388,8 +411,8 @@ def datamodule2df(data: dict, module: str) -> pd.DataFrame:
                 continue
             if field == "gpstimeUs":
                 dtype = "int64"
-            elif field in ("longitude", "latitude", "gpstime"):
-                # gpstime is an epoch in seconds: float32 only resolves 128 s around 1.7e9
+            elif field in ("T", "longitude", "latitude", "gpstime"):
+                # float32 only resolves 0.24 ms beyond T = 2048 s and 128 s for a gpstime epoch around 1.7e9
                 dtype = "float64"
             df[field] = np.array(arr, dtype=dtype)
     return df
@@ -435,7 +458,7 @@ def json2csv(data: dict, output_fs: float | None = None) -> pd.DataFrame:
 
     for mod in modules:
         # Compute sampling frequency for each module
-        df[mod]["fs"] = 1 / df[mod]["T"].diff()
+        df[mod]["fs"] = (1 / df[mod]["T"].diff()).astype("float32")
         # Rename columns before fusion
         df[mod] = df[mod].rename(lambda col: rename_cols(col, mod), axis="columns")
 
