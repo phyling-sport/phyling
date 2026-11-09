@@ -11,7 +11,7 @@ class DatamoduleDtypesTest(unittest.TestCase):
     """datamodule2df column dtypes: float32 by default, wider where float32 cannot hold the value."""
 
     def test_gps_dtypes(self):
-        """gpstime keeps its one-second steps (float32 resolves 128 s at 1.7e9), other fields stay float32."""
+        """gpstime keeps its one-second steps (float32 resolves 128 s at 1.7e9), T is float64, others stay float32."""
         data = {
             "modules": {
                 "gps": {
@@ -31,7 +31,7 @@ class DatamoduleDtypesTest(unittest.TestCase):
         self.assertEqual(df["gpstimeUs"].dtype, np.int64)
         self.assertEqual(df["latitude"].dtype, np.float64)
         self.assertEqual(df["speed"].dtype, np.float32)
-        self.assertEqual(df["T"].dtype, np.float32)
+        self.assertEqual(df["T"].dtype, np.float64)
 
 
 if __name__ == "__main__":
