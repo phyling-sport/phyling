@@ -3,6 +3,15 @@ import logging
 import numpy as np
 
 from phyling.decoder import calib_texisense
+from phyling.decoder.clock_offset import chunk_bounds
+from phyling.decoder.clock_offset import chunk_offset
+from phyling.decoder.clock_offset import MAX_SHIFT_SEC
+from phyling.decoder.clock_offset import MIN_CHUNK_DURATION_SEC
+from phyling.decoder.clock_offset import OFFSET_APPLIED
+from phyling.decoder.clock_offset import OFFSET_OLD_MINI
+from phyling.decoder.clock_offset import OFFSET_TOO_LARGE
+from phyling.decoder.clock_offset import OFFSET_TOO_SHORT
+from phyling.decoder.clock_offset import replace_outliers
 
 CALIB_3D_MAPPER = {
     "acc": ["acc_x", "acc_y", "acc_z"],
@@ -388,49 +397,33 @@ def time_correction_v1(mod_data: dict):
 
 
 def time_correction_v2(mod_data: dict, mod: str):
-    """Compute time correction since v6.6.2"""
-    MIN_TIME_DIFF_SEC = 15
-    MAX_SHIFT_SEC = 3
+    """Compute time correction since v6.6.2 (rule in phyling.decoder.clock_offset)."""
     T = np.array(mod_data["data"]["T"])
-    notifDiff = np.array(mod_data["data"]["notifDiff"])
-    # Remove notifDiff outliers
-    notifDiff[notifDiff < -MAX_SHIFT_SEC * 1e6] = max(notifDiff)
+    notifDiff = replace_outliers(np.array(mod_data["data"]["notifDiff"]))
+    ind = chunk_bounds(T)
 
-    # Separate data into chunks based on lost data and sensor switch off events
-    ind = np.where(np.diff(T) > 3)[0] + 1
-    ind = [0, *list(ind), len(T)]
-
-    # Preprocess times
     T_corr = []
     for i in range(len(ind) - 1):
-        duration = T[ind[i + 1] - 1] - T[ind[i]]
-        appliedDiff = 0
-        # apply correction only if duration is long enough
-        if duration > MIN_TIME_DIFF_SEC:
-            min_ = np.min(notifDiff[ind[i] : ind[i + 1]])
-            max_ = np.max(notifDiff[ind[i] : ind[i + 1]])
-            if min_ == 0 and max_ == 0:
-                logging.warning(f"{mod}: Cannot apply correction to old miniphyling data")
-            else:
-                appliedDiff = min_ / 1e6 - 0.003
-                # 0.003 is the mean time btw notif sent on mini and receive on maxi
-                logging.info(
-                    f"{mod}: Applied time offset: {appliedDiff * 1000:4.1f}ms "
-                    f"from T {int(T[ind[i]])}s to {int(T[ind[i + 1] - 1])}s"
-                )
-        else:
+        start, stop = ind[i], ind[i + 1]
+        duration = T[stop - 1] - T[start]
+        offset, status = chunk_offset(np.min(notifDiff[start:stop]), np.max(notifDiff[start:stop]), duration)
+        if status == OFFSET_APPLIED:
+            logging.info(
+                f"{mod}: Applied time offset: {offset * 1000:4.1f}ms from T {int(T[start])}s to {int(T[stop - 1])}s"
+            )
+        elif status == OFFSET_TOO_SHORT:
             logging.warning(
                 f"{mod}: Mini connected only {duration:4.1f}s no time offset applied "
-                f"(minimum {MIN_TIME_DIFF_SEC}s required)"
+                f"(minimum {MIN_CHUNK_DURATION_SEC}s required)"
             )
-
-        if abs(appliedDiff) > MAX_SHIFT_SEC:
+        elif status == OFFSET_OLD_MINI:
+            logging.warning(f"{mod}: Cannot apply correction to old miniphyling data")
+        elif status == OFFSET_TOO_LARGE:
             logging.warning(
-                f"{mod}: Time offset {appliedDiff * 1000:4.1f}ms is too large "
+                f"{mod}: Time offset {offset * 1000:4.1f}ms is too large "
                 f"(> {MAX_SHIFT_SEC * 1000:4.1f}ms), no correction applied."
             )
-            appliedDiff = 0
-        T_corr.extend(T[ind[i] : ind[i + 1]] + appliedDiff)
+        T_corr.extend(T[start:stop] + (offset if status == OFFSET_APPLIED else 0))
     return T_corr
 
 
