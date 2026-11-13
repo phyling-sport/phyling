@@ -29,7 +29,7 @@ class DecodeSaveExtensionTest(unittest.TestCase):
     def test_decode_save_refuses_other_extension(self):
         """A non raw file raises before decoding."""
         with mock.patch.object(decoder, "decode") as decode, self.assertRaises(ValueError):
-            decoder.decodeSave("/tmp/data.csv")
+            decoder.decodeSave("data.csv")  # refused on its extension, the path is never opened
         decode.assert_not_called()
 
     def test_decode_save_writes_json_next_to_file(self):
