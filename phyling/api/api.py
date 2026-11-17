@@ -607,7 +607,7 @@ class PhylingAPI:
         Args:
             rec_id (int): The ID of the record to download.
             file_type (str): The type of file to download. Can be one of the following:
-                - "raw": raw data (.txt)
+                - "raw": raw data (.phy)
                 - "decoded": decoded data (.csv)
                 - "pdf": pdf report (.pdf)
                 - "stats": stats report (.csv)

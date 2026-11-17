@@ -7,6 +7,8 @@ import ujson
 
 from phyling.decoder.decoder_utils import *  # noqa
 from phyling.decoder.decoder_utils import decode
+from phyling.phyling_utils import is_raw_record_file
+from phyling.phyling_utils import RAW_RECORD_EXTENSIONS
 
 
 def decodeSave(filename, verbose=True, overwrite=False):
@@ -20,10 +22,10 @@ def decodeSave(filename, verbose=True, overwrite=False):
     Returns:
         Boolean: True if decoding is successful, else False.
     """
-    if filename[-4:].lower() != ".txt":
-        raise ValueError("Input file is not a txt file")
+    if not is_raw_record_file(filename):
+        raise ValueError(f"Input file is not a raw record file ({', '.join(RAW_RECORD_EXTENSIONS)})")
 
-    fileout = filename[:-4] + ".json"
+    fileout = os.path.splitext(filename)[0] + ".json"
     if not overwrite and os.path.isfile(fileout):
         print("File already decoded (set overwrite to true to decode)")
         return True
@@ -40,14 +42,14 @@ def decodeSave(filename, verbose=True, overwrite=False):
 
 
 def decodeSaveFolder(path, verbose=True, overwrite=False):
-    """Decode and save all txt files in a folder.
+    """Decode and save all raw record files (.phy, or legacy .txt) in a folder.
 
     Parameters:
         path (str): access path of the folder.
         verbose (bool): if True, print status infos during decoding.
         overwrite (bool): if False, an already decoded file will not be decoded again.
     """
-    filenames = [file for file in os.listdir(path) if (file[-4:].lower() == ".txt")]
+    filenames = [file for file in os.listdir(path) if is_raw_record_file(file)]
     for file in filenames:
         res = decodeSave(path + file, verbose, overwrite)
         if not res:
