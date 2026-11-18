@@ -27,6 +27,11 @@ BLE_NOTIF_TIME_SYNC = b"2"
 BLE_NOTIF_TIME_OFFSET_SYNC = b"3"
 BLE_NOTIF_NANO_SEND_CONFIG = b"4"
 
+# The sensor refuses a second client ~110-140 ms after its subscription; same window as the mobile app
+ALREADY_IN_USE_WINDOW_SEC = 2.0
+# Delay before retrying a sensor that refused this client, like the Maxi retrying at its next scan
+ALREADY_IN_USE_RETRY_SEC = 15.0
+
 ACC_SCALE_SELECTION = 16
 GYRO_RANGE = 2000
 MAG_RANGE = 16
@@ -78,6 +83,25 @@ def find_device(name: str) -> str | None:
             return device.address
     print(f"Device not found: {name}")
     return None
+
+
+def is_already_in_use_disconnection(since_subscription: float | None, notified: bool, client_requested: bool) -> bool:
+    """
+    Tell whether a disconnection is a Mini / Nano refusing this client as owner of its data.
+
+    The sensor gives its data to the first client that subscribes to its notifications and disconnects the next ones
+    (HCI reason 0x14, phylib BLE_DISCONNECT_REASON_ALREADY_USED). bleak never reports that reason, so the refusal is
+    any disconnection not asked by this client within ALREADY_IN_USE_WINDOW_SEC of the data subscription request,
+    before any notification: the timing rule of the mobile app (PhylingMobile ``isAlreadyInUseDisconnection``).
+
+    :param since_subscription: Seconds from the data subscription request to the disconnection, None if not subscribed
+    :param notified: A data notification was received on this connection
+    :param client_requested: The disconnection was asked by this client
+    :return: True if the sensor refused the connection because another client owns its data
+    """
+    if client_requested or since_subscription is None:
+        return False
+    return since_subscription <= ALREADY_IN_USE_WINDOW_SEC and not notified
 
 
 def _make_col_spec(name: str, type_char: str = "B") -> dict:
@@ -140,6 +164,10 @@ class BaseDevice(ABC):
         self.startBLETime = 0
         self.startPCtime = 0
         self._ble_disconnected = False
+        self._data_subscribed_at: float | None = None
+        self._data_notified = False
+        self._closing = False
+        self._already_in_use = False
 
     def get_name(self) -> str:
         """
@@ -217,6 +245,7 @@ class BaseDevice(ABC):
         Uses self._col_specs to decode samples of variable type and size.
         """
         pc_now = time.time()
+        self._data_notified = True
 
         current_index = 10
         nbPackets = int((len(data) - current_index) / self._oneDataSize)
@@ -251,6 +280,31 @@ class BaseDevice(ABC):
             self.nbDatas += 1
             current_index += self._oneDataSize
 
+    def _on_ble_disconnected(self, _client: BleakClient) -> None:
+        """bleak disconnected_callback: flag the disconnection and tell whether the sensor refused this client."""
+        self._ble_disconnected = True
+        since = None if self._data_subscribed_at is None else time.monotonic() - self._data_subscribed_at
+        self._already_in_use = is_already_in_use_disconnection(since, self._data_notified, self._closing)
+
+    async def _retry_after_refusal(self, start_time: float, duration: int | None) -> None:
+        """
+        Report a refusal by the sensor and wait ALREADY_IN_USE_RETRY_SEC before the next connection attempt.
+        The wait ends early on a stop request or at the end of the recording duration.
+
+        :param start_time: Start of the recording (time.time())
+        :param duration: Duration in seconds of the recording (None = indefinitely)
+        """
+        print(
+            f"[{self.get_name()}] already in use by another device (Maxi or app), connection refused. "
+            f"Retrying in {ALREADY_IN_USE_RETRY_SEC:.0f}s..."
+        )
+        self._conn_id += 1
+        retry_at = time.monotonic() + ALREADY_IN_USE_RETRY_SEC
+        while not self.disconnect and time.monotonic() < retry_at:
+            if duration is not None and time.time() - start_time >= duration:
+                return
+            await asyncio.sleep(0.1)
+
     async def _run_ble_client(self, duration: int | None) -> None:
         """
         Run the BLE client to connect to the device and start recording data.
@@ -274,14 +328,15 @@ class BaseDevice(ABC):
                 break
 
             self._ble_disconnected = False
+            self._data_subscribed_at = None
+            self._data_notified = False
+            self._closing = False
+            self._already_in_use = False
             self.startBLETime = 0
             self.startPCtime = 0
 
             try:
-                async with BleakClient(
-                    self.address,
-                    disconnected_callback=lambda __: setattr(self, "_ble_disconnected", True),
-                ) as client:
+                async with BleakClient(self.address, disconnected_callback=self._on_ble_disconnected) as client:
                     print(f"[{self.get_name()}] Device {self.ble_name} Connected")
 
                     await self._setup_config(client)
@@ -294,6 +349,7 @@ class BaseDevice(ABC):
                         active_uuid = BLE_UUID_PHYLING_OLD
                         print(f"[{self.get_name()}] Using legacy BLE UUID (old device)")
 
+                    self._data_subscribed_at = time.monotonic()
                     await client.start_notify(active_uuid, self._notification_handler)
                     try:
                         await client.write_gatt_char(active_uuid, BLE_NOTIF_START_REC)
@@ -308,6 +364,7 @@ class BaseDevice(ABC):
                         await asyncio.sleep(0.1)
 
                     if not self._ble_disconnected:
+                        self._closing = True
                         try:
                             await client.write_gatt_char(active_uuid, BLE_NOTIF_STOP_REC)
                             await client.stop_notify(active_uuid)
@@ -316,7 +373,9 @@ class BaseDevice(ABC):
 
                 print(f"[{self.get_name()}] Recording stopped ({self.nbDatas} samples)")
 
-                if self._ble_disconnected and not self.disconnect:
+                if self._already_in_use:
+                    await self._retry_after_refusal(start_time, duration)
+                elif self._ble_disconnected and not self.disconnect:
                     print(f"[{self.get_name()}] Unexpected disconnect. Reconnecting in 1s...")
                     self._conn_id += 1
                     await asyncio.sleep(1.0)
@@ -326,9 +385,12 @@ class BaseDevice(ABC):
             except Exception as e:
                 if self.disconnect:
                     break
-                print(f"[{self.get_name()}] Connection error: {e}. Reconnecting in 1s...")
-                self._conn_id += 1
-                await asyncio.sleep(1.0)
+                if self._already_in_use:
+                    await self._retry_after_refusal(start_time, duration)
+                else:
+                    print(f"[{self.get_name()}] Connection error: {e}. Reconnecting in 1s...")
+                    self._conn_id += 1
+                    await asyncio.sleep(1.0)
 
     def run(self, duration: int | None = None) -> None:
         """
