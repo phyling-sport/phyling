@@ -12,7 +12,7 @@ from phyling.decoder.realtime_dedup import SOCKET_HEADER_SIZE
 EPOCH_US = 1_790_000_000_000_000
 IMU_ID, GPS_ID = 1, 2
 IMU_SIZE, GPS_SIZE = 23, 33
-LTE_RING_BYTES = 24 * 1536
+LIVE_RING_BYTES = 24 * 1536
 MAXI_RING_BYTES = 50 * 4096
 SOCKET_HEADER = b"\x01\x3c\x00\x05\x00"
 
@@ -81,28 +81,28 @@ class TablesTest(unittest.TestCase):
 
     def test_window_from_ring_capacity_and_throughput(self):
         throughput = 100 * IMU_SIZE + 10 * GPS_SIZE  # bytes/s of the recDescription
-        window = build_window_us(make_header(), LTE_RING_BYTES)
-        self.assertEqual(window, int(2 * LTE_RING_BYTES / throughput * 1e6))
+        window = build_window_us(make_header(), LIVE_RING_BYTES)
+        self.assertEqual(window, int(2 * LIVE_RING_BYTES / throughput * 1e6))
         self.assertAlmostEqual(window / 1e6, 28.03, places=1)
         self.assertAlmostEqual(build_window_us(make_header(), MAXI_RING_BYTES) / 1e6, 155.7, places=1)
 
     def test_state_bounded_by_the_ring_capacity_in_frames(self):
-        dedup = RealtimeDedup(make_header(), LTE_RING_BYTES)
+        dedup = RealtimeDedup(make_header(), LIVE_RING_BYTES)
         in_window = sum(st.expected - 64 for st in dedup.modules.values())
-        ring_frames = LTE_RING_BYTES * (100 + 10) / (100 * IMU_SIZE + 10 * GPS_SIZE)
+        ring_frames = LIVE_RING_BYTES * (100 + 10) / (100 * IMU_SIZE + 10 * GPS_SIZE)
         self.assertAlmostEqual(in_window / ring_frames, 2.0, places=2)
 
     def test_module_without_rate_is_not_deduplicated(self):
-        dedup = RealtimeDedup(make_header(imu_rate=0), LTE_RING_BYTES)
+        dedup = RealtimeDedup(make_header(imu_rate=0), LIVE_RING_BYTES)
         self.assertNotIn(IMU_ID, dedup.modules)
         data = payload([imu_frame(0)])
         dedup.filter(data)
         self.assertIs(dedup.filter(data), data)
 
     def test_no_rate_at_all_disables_dedup(self):
-        self.assertEqual(build_window_us(make_header(imu_rate=0, gps_rate=0), LTE_RING_BYTES), 0)
+        self.assertEqual(build_window_us(make_header(imu_rate=0, gps_rate=0), LIVE_RING_BYTES), 0)
         self.assertEqual(
-            RealtimeDedup(make_header(imu_rate=0, gps_rate=0), LTE_RING_BYTES).modules,
+            RealtimeDedup(make_header(imu_rate=0, gps_rate=0), LIVE_RING_BYTES).modules,
             {},
         )
 
@@ -111,7 +111,7 @@ class DedupTest(unittest.TestCase):
     """Frame-level dedup of payloads."""
 
     def setUp(self):
-        self.dedup = RealtimeDedup(make_header(), LTE_RING_BYTES)
+        self.dedup = RealtimeDedup(make_header(), LIVE_RING_BYTES)
 
     def test_unique_payload_is_passed_as_is(self):
         data = payload([imu_frame(i) for i in range(10)])
@@ -186,7 +186,7 @@ class DedupTest(unittest.TestCase):
         self.assertEqual(self.dedup.pop_counters()["unsplit"], 1)
 
     def test_frame_below_watermark_passes(self):
-        window_s = build_window_us(make_header(), LTE_RING_BYTES) / 1e6
+        window_s = build_window_us(make_header(), LIVE_RING_BYTES) / 1e6
         old = imu_frame(0)
         self.dedup.filter(payload([old]))
         recent = imu_frame(int(window_s * 100) + 50)
@@ -195,7 +195,7 @@ class DedupTest(unittest.TestCase):
         self.assertEqual(self.dedup.pop_counters()["below_watermark"], 1)
 
     def test_prune_keeps_the_table_bounded_and_the_window_exact(self):
-        dedup = RealtimeDedup(make_header(), LTE_RING_BYTES)
+        dedup = RealtimeDedup(make_header(), LIVE_RING_BYTES)
         st = dedup.modules[IMU_ID]
         window_frames = st.window_us // 10_000
         n = 50 * (10 * st.expected // 50)
@@ -205,17 +205,17 @@ class DedupTest(unittest.TestCase):
         self.assertIsNone(dedup.filter(payload([imu_frame(n - window_frames + 1)])))
 
     def test_time_module_frames_are_split_but_never_deduplicated(self):
-        dedup = RealtimeDedup(make_header("v6.6.0"), LTE_RING_BYTES)
+        dedup = RealtimeDedup(make_header("v6.6.0"), LIVE_RING_BYTES)
         time_frame = struct.pack("<BIQ", 100, 1000, EPOCH_US)
         data = SOCKET_HEADER + time_frame + time_frame + imu_frame(0)
         self.assertIs(dedup.filter(data), data)
 
 
 class LinkCountersTest(unittest.TestCase):
-    """Frames seen on a single link of a dual Phyling-LTE (LTE /b64 vs WiFi binary topic)."""
+    """Frames seen on a single link of a dual Phyling-Live (LTE /b64 vs WiFi binary topic)."""
 
     def test_frames_carried_by_one_link_only(self):
-        dedup = RealtimeDedup(make_header(), LTE_RING_BYTES)
+        dedup = RealtimeDedup(make_header(), LIVE_RING_BYTES)
         dedup.filter(payload([imu_frame(i) for i in range(20)]), LINK_B64)
         dedup.filter(payload([imu_frame(i) for i in range(15)]), LINK_RAW)
         dedup.filter(payload([imu_frame(i) for i in range(20, 30)]), LINK_RAW)
@@ -224,13 +224,13 @@ class LinkCountersTest(unittest.TestCase):
         self.assertEqual(dedup.pop_counters()["single_link"], {"raw": 0, "b64": 5})
 
     def test_single_topic_device_never_counts(self):
-        dedup = RealtimeDedup(make_header(), LTE_RING_BYTES)
+        dedup = RealtimeDedup(make_header(), LIVE_RING_BYTES)
         dedup.filter(payload([imu_frame(i) for i in range(20)]), LINK_B64)
         dedup.flush()
         self.assertEqual(dedup.pop_counters()["single_link"], {"raw": 0, "b64": 0})
 
     def test_single_link_counted_on_prune(self):
-        dedup = RealtimeDedup(make_header(), LTE_RING_BYTES)
+        dedup = RealtimeDedup(make_header(), LIVE_RING_BYTES)
         st = dedup.modules[IMU_ID]
         dedup.filter(payload([imu_frame(0)]), LINK_RAW)
         n = int(2 * st.expected)

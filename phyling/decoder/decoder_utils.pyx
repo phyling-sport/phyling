@@ -255,12 +255,12 @@ cpdef void normalizeModuleFields(dict header):
 
     On the wire the per-module "description" field list comes in two shapes:
       - legacy: a list of dicts {"name", "type", "unit", ...} (Maxi + already-deployed firmwares).
-      - compact: a list of [name, type, unit] triplets (recent Phyling-LTE firmwares).
+      - compact: a list of [name, type, unit] triplets (recent Phyling-Live firmwares).
     Compact entries are converted in place to the dict form so all downstream code stays unchanged.
     Disambiguation is done on the type of the first entry (dict -> legacy, list -> compact); empty
     field lists are left untouched. Idempotent: re-running on an already-normalized header is a no-op.
 
-    Mini GPS fields relayed by a Maxi / Phyling-LTE ("gps_"-prefixed, in miniphyling / nanophyling / ble
+    Mini GPS fields relayed by a Maxi / Phyling-Live ("gps_"-prefixed, in miniphyling / nanophyling / ble
     modules) are declared over BLE without a unit, so their known units are filled in when missing.
     """
     cdef object mod
