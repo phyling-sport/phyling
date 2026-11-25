@@ -10,8 +10,8 @@ DEDUP_KEY_SIZE = 9  # [module_id u8][ts i64]
 WINDOW_MARGIN = 2.0
 # a module table is pruned once it holds 1.5x the frames its window can cover
 PRUNE_FACTOR = 1.5
-LINK_RAW = 1  # binary topic data/phyraw/all (Maxi, Phyling-LTE over WiFi)
-LINK_B64 = 2  # base64url topic data/phyraw/all/b64 (Phyling-LTE over LTE)
+LINK_RAW = 1  # binary topic data/phyraw/all (Maxi, Phyling-Live over WiFi)
+LINK_B64 = 2  # base64url topic data/phyraw/all/b64 (Phyling-Live over LTE)
 LINK_NAMES = {LINK_RAW: "raw", LINK_B64: "b64"}
 
 NO_TS = -(1 << 64)  # below any i64 timestamp: "nothing seen yet"
@@ -93,7 +93,7 @@ class RealtimeDedup:
     """Per device dedup of realtime frames, for one recDescription of one record.
 
     A realtime payload is `[5 bytes socket header][frame][frame]...`, each frame `[module_id u8][ts i64 µs][fields]`
-    with a size fixed per module by the recDescription. The same frame can reach the server twice: a Phyling-LTE in
+    with a size fixed per module by the recDescription. The same frame can reach the server twice: a Phyling-Live in
     dual mode publishes the same stream over LTE (".../b64" topic) and WiFi (binary topic) with a different chunking,
     and a device replays its own ring after an outage. Within one record no two distinct frames share their first 9
     bytes, so `[module_id][ts]` is the dedup key; the state must be dropped at every record boundary.

@@ -66,7 +66,7 @@ class MiniPhyling(BaseDevice):
                     if "|" in col_def:
                         col_name, type_char = col_def.split("|")
                         col_name = col_name.strip()
-                        # imu/mag/theta: use channel name as-is (e.g. acc_x, gyro_z, angle), like the Maxi and LTE hubs
+                        # imu/mag/theta: channel name as-is (e.g. acc_x, angle), like the Maxi and Phyling-Live hubs
                         # other modules: prefix with module name (e.g. adc_0, algo_power)
                         if module_name not in ("imu", "mag", "theta"):
                             col_name = f"{module_name}_{col_name}"

@@ -255,12 +255,12 @@ cpdef void normalizeModuleFields(dict header):
 
     On the wire the per-module "description" field list comes in two shapes:
       - legacy: a list of dicts {"name", "type", "unit", ...} (Maxi + already-deployed firmwares).
-      - compact: a list of [name, type, unit] triplets (recent Phyling-LTE firmwares).
+      - compact: a list of [name, type, unit] triplets (recent Phyling-Live firmwares).
     Compact entries are converted in place to the dict form so all downstream code stays unchanged.
     Disambiguation is done on the type of the first entry (dict -> legacy, list -> compact); empty
     field lists are left untouched. Idempotent: re-running on an already-normalized header is a no-op.
 
-    Mini GPS fields relayed by a Maxi / Phyling-LTE ("gps_"-prefixed, in miniphyling / nanophyling / ble
+    Mini GPS fields relayed by a Maxi / Phyling-Live ("gps_"-prefixed, in miniphyling / nanophyling / ble
     modules) are declared over BLE without a unit, so their known units are filled in when missing.
     """
     cdef object mod
@@ -874,11 +874,13 @@ cpdef void printDecodingInfos(int statsAll, int percent, bint verbose=True, obje
         record.set_decoding_state(f"{msg}")
 
 
-cpdef dict decode(str filename, bint verbose=True, dict config_client=None, object record=None, bint use_s3=True, bint check_higher_values=True):
+cpdef dict decode(str filename, bint verbose=True, dict config_client=None, object record=None, bint use_s3=True, bint check_higher_values=True, bint ignore_calibration=False):
     """Decode a record file into a jsonData dict of modules.
 
     The per-frame "epoch" column produced by loadOne is realtime-only and is excluded from this
     offline output (only "T" and the regular data columns are kept).
+
+    ignore_calibration: decode raw values, whatever the file calibration section holds (returned "calib" is {}).
     """
     logging.info("<== decode start [{}] ==>".format(filename))
     cdef bint retSuccess = True
@@ -894,6 +896,8 @@ cpdef dict decode(str filename, bint verbose=True, dict config_client=None, obje
         filename, verbose=verbose, startingTime=start, use_s3=use_s3, record=record,
     )
     setup_header(header)
+    if ignore_calibration:
+        calibration = {}
     # validated once here: loadOne swallows per-frame exceptions and would hide a bad coef behind "Missing some data"
     calibration = calib.normalize_calibration(calibration)
     logging.info("start decoding file")

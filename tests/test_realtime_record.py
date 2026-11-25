@@ -152,6 +152,34 @@ class TestDataTxt(unittest.TestCase):
         self.assertEqual((imu["computeNorm"], imu["computeRms"], imu["computeSum"]), (True, False, False))
         self.assertFalse({"computeNorm", "computeRms", "computeSum"} & set(data["modules"]["gps"]["description"]))
 
+    def test_decode_ignore_calibration(self):
+        """ignore_calibration decodes raw values and returns an empty calib, whatever the file calibration."""
+        header = make_header()
+        header["modules"]["imu"]["type"] = "imu"
+        header["modules"]["gps"]["type"] = "gps"
+        header["modules"]["imu"]["description"] = [
+            {"name": "id", "type": "uint8"},
+            {"name": "time", "type": "uint64"},
+            *[{"name": f"v{i}", "type": "int16"} for i in range(7)],
+        ]
+        header["modules"]["gps"]["description"] = [
+            {"name": "id", "type": "uint8"},
+            {"name": "time", "type": "uint64"},
+            *[{"name": f"v{i}", "type": "int32"} for i in range(6)],
+        ]
+        header["modules"]["debug"]["description"] = []
+        calibration = {"imu": {"v0": {"coef": 2.0, "offset": 10.0}}}
+        frames = b"".join(imu_frame(i) for i in range(50))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "data.txt")
+            with open(path, "wb") as f:
+                f.write(build_data_txt(header, calibration, frames))
+            calibrated = decode(path, verbose=False, use_s3=False)
+            raw = decode(path, verbose=False, use_s3=False, ignore_calibration=True)
+        self.assertEqual(raw["calib"], {})
+        self.assertEqual(list(raw["modules"]["imu"]["data"]["v0"]), list(range(50)))
+        self.assertNotEqual(list(calibrated["modules"]["imu"]["data"]["v0"]), list(range(50)))
+
 
 if __name__ == "__main__":
     unittest.main()

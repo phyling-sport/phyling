@@ -135,6 +135,15 @@ def interp1d_(
     return interp[out_cols]
 
 
+def _data_cols(df: pd.DataFrame, x: str, numeric_only: bool) -> list[str]:
+    """Columns of df other than "T" and x, numeric ones only if numeric_only (a text column cannot be interpolated)."""
+    return [
+        col
+        for col in df.columns
+        if col not in ("T", x) and (not numeric_only or pd.api.types.is_numeric_dtype(df[col]))
+    ]
+
+
 def fuse_data(
     df1: pd.DataFrame,
     df2: pd.DataFrame,
@@ -155,8 +164,10 @@ def fuse_data(
     Parameters:
         df1: first DataFrame to be fused.
         df2: second DataFrame to be fused.
-        cols1: list of column names in df1 to keep in the fused DataFrame or "all".
-        cols2: list of column names in df2 to keep in the fused DataFrame or "all".
+        cols1: list of column names in df1 to keep in the fused DataFrame or "all" (every column but the time
+            ones; numeric only when df1 is interpolated).
+        cols2: list of column names in df2 to keep in the fused DataFrame or "all" (every numeric column but the
+            time ones: df2 is always interpolated).
         prefix1 (str): if not empty, prepend it to each col in cols1.
         prefix2 (str): if not empty, prepend it to each col in cols2.
         fs (float): sampling frequency.
@@ -171,17 +182,9 @@ def fuse_data(
         Fused DataFrame.
     """
     if cols1 == "all":
-        cols1 = list(df1.columns)
-        if "T" in cols1:
-            cols1.remove("T")
-        if x != "T" and x in cols1:
-            cols1.remove(x)
+        cols1 = _data_cols(df1, x, numeric_only=interp_df1)
     if cols2 == "all":
-        cols2 = list(df2.columns)
-        if "T" in cols2:
-            cols2.remove("T")
-        if x != "T" and x in cols2:
-            cols2.remove(x)
+        cols2 = _data_cols(df2, x, numeric_only=True)
 
     if len(prefix1) > 0 or len(suffix1) > 0:
         mapper = {col: prefix1 + col + suffix1 for col in cols1}
